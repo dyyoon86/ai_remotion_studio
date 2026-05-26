@@ -106,9 +106,14 @@ export type TranscriptLine = {
 };
 
 export type UploadedFile = {
+  id?: string;
   name: string;
-  duration: string;
-  size: string;
+  duration: string;          // keep for back-compat (formatted)
+  size: string;              // keep for back-compat (formatted, e.g. "5.4 MB")
+  durationSeconds?: number;
+  sizeBytes?: number;
+  videoUrl?: string;
+  thumbnails?: string[];     // 8 URLs
 } | null;
 
 export const STEPS = [

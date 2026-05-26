@@ -1,4 +1,8 @@
 import { NextResponse } from "next/server";
+import { spawn } from "node:child_process";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { TEMPLATE_CATALOG } from "@/lib/template-catalog";
 import type { TemplateId } from "@/lib/store";
 
@@ -79,18 +83,45 @@ function stripCodeFences(text: string): string {
   return t.trim();
 }
 
-export async function POST(request: Request) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    return NextResponse.json(
-      {
-        error:
-          "ANTHROPIC_API_KEY is not set. Create a .env.local file at the project root with ANTHROPIC_API_KEY=<your-key> and restart the dev server.",
-      },
-      { status: 500 },
-    );
-  }
+async function runCodex(prompt: string, timeoutMs = 120_000): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), "codex-templates-"));
+  const lastMsgPath = join(dir, "last.txt");
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn("codex", [
+        "exec",
+        "--ephemeral",
+        "--skip-git-repo-check",
+        "--color", "never",
+        "-o", lastMsgPath,
+        "-", // read prompt from stdin
+      ], { stdio: ["pipe", "pipe", "pipe"] });
 
+      const timer = setTimeout(() => {
+        child.kill("SIGKILL");
+        reject(new Error(`codex exec timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
+
+      let stderr = "";
+      child.stderr.on("data", (d: Buffer) => { stderr += d.toString(); });
+      child.on("error", (err: Error) => { clearTimeout(timer); reject(err); });
+      child.on("close", (code: number | null) => {
+        clearTimeout(timer);
+        if (code === 0) resolve();
+        else reject(new Error(`codex exec exited ${code}: ${stderr.slice(-500)}`));
+      });
+
+      child.stdin.write(prompt);
+      child.stdin.end();
+    });
+
+    return await readFile(lastMsgPath, "utf8");
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+export async function POST(request: Request) {
   let body: unknown;
   try {
     body = await request.json();
@@ -142,77 +173,23 @@ export async function POST(request: Request) {
 
   const prompt = buildPrompt(scenes);
 
-  // Call Anthropic Messages API
-  let anthropicRes: Response;
+  // Call codex CLI subprocess
+  let rawText: string;
   try {
-    anthropicRes = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 3000,
-        messages: [{ role: "user", content: prompt }],
-      }),
-    });
+    rawText = await runCodex(prompt);
   } catch (err) {
-    return NextResponse.json(
-      {
-        error: `Failed to reach Anthropic API: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      },
-      { status: 500 },
-    );
-  }
-
-  if (!anthropicRes.ok) {
-    let detail = "";
-    try {
-      const t = await anthropicRes.text();
-      detail = t.slice(0, 400);
-    } catch {
-      // ignore
+    const e = err as NodeJS.ErrnoException;
+    if (e.code === "ENOENT") {
+      return NextResponse.json(
+        {
+          error:
+            "codex CLI not found on PATH. Install OpenAI Codex CLI and run `codex login`.",
+        },
+        { status: 500 },
+      );
     }
     return NextResponse.json(
-      {
-        error: `Anthropic API error (${anthropicRes.status} ${anthropicRes.statusText}): ${detail}`,
-      },
-      { status: 500 },
-    );
-  }
-
-  let data: unknown;
-  try {
-    data = await anthropicRes.json();
-  } catch (err) {
-    return NextResponse.json(
-      {
-        error: `Failed to parse Anthropic JSON envelope: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      },
-      { status: 500 },
-    );
-  }
-
-  // Extract text content
-  const content = (data as { content?: Array<{ type?: string; text?: string }> })
-    .content;
-  if (!Array.isArray(content) || content.length === 0) {
-    return NextResponse.json(
-      { error: "Anthropic response missing content array." },
-      { status: 500 },
-    );
-  }
-  const firstText = content.find((c) => c?.type === "text" && typeof c.text === "string");
-  const rawText = firstText?.text;
-  if (typeof rawText !== "string") {
-    return NextResponse.json(
-      { error: "Anthropic response missing text block." },
+      { error: e.message ?? String(err) },
       { status: 500 },
     );
   }

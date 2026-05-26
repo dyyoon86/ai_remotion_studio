@@ -7,44 +7,52 @@ import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import {
   UploadCloud,
-  FileAudio,
+  FileVideo,
   CheckCircle2,
-  Play,
   ArrowRight,
-  Music4,
+  Clock,
   Loader2,
   X,
+  Camera,
+  AlertCircle,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 
-function MockWaveform({ bars = 64, playing = false }: { bars?: number; playing?: boolean }) {
-  // Deterministic pseudo-random for stable SSR/CSR
-  const heights = Array.from({ length: bars }, (_, i) => {
-    const t = (i / bars) * Math.PI * 4;
-    const base = 0.5 + 0.5 * Math.sin(t) * Math.cos(t * 0.7 + 1.2);
-    const noise = ((i * 9301 + 49297) % 233280) / 233280;
-    return Math.max(0.15, Math.min(1, base * 0.7 + noise * 0.5));
-  });
-
-  return (
-    <div className="flex items-center gap-[2px] h-16 w-full">
-      {heights.map((h, i) => (
-        <div
-          key={i}
-          style={{ height: `${h * 100}%`, animationDelay: `${i * 30}ms` }}
-          className={cn(
-            "flex-1 rounded-full transition-all",
-            playing
-              ? "bg-gradient-to-t from-violet-600 to-violet-300 pulse-soft"
-              : i < bars * 0.25
-              ? "bg-violet-500/70"
-              : "bg-slate-700/60"
-          )}
-        />
-      ))}
-    </div>
-  );
+function formatBytes(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let v = n;
+  let u = 0;
+  while (v >= 1024 && u < units.length - 1) {
+    v /= 1024;
+    u += 1;
+  }
+  const fixed = v >= 100 || u === 0 ? v.toFixed(0) : v.toFixed(1);
+  return `${fixed} ${units[u]}`;
 }
+
+function formatDuration(totalSeconds: number): string {
+  if (!Number.isFinite(totalSeconds) || totalSeconds < 0) return "0:00";
+  const total = Math.round(totalSeconds);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const ss = String(s).padStart(2, "0");
+  if (h > 0) {
+    return `${h}:${String(m).padStart(2, "0")}:${ss}`;
+  }
+  return `${m}:${ss}`;
+}
+
+type UploadResponse = {
+  id: string;
+  name: string;
+  sizeBytes: number;
+  durationSeconds: number;
+  durationDisplay: string;
+  videoUrl: string;
+  thumbnails: string[];
+};
 
 export function UploadStep() {
   const uploadedFile = useStudio((s) => s.uploadedFile);
@@ -53,31 +61,62 @@ export function UploadStep() {
 
   const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const handleFile = (name: string) => {
+  const uploadFile = async (file: File) => {
+    setError(null);
     setUploading(true);
-    // Simulate upload latency
-    setTimeout(() => {
-      setUploadedFile({
-        name: name || "recording_session_01.mp3",
-        duration: "3:42",
-        size: "5.4 MB",
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/upload-video", {
+        method: "POST",
+        body: formData,
       });
+      const text = await res.text();
+      let payload: unknown;
+      try {
+        payload = JSON.parse(text);
+      } catch {
+        payload = { error: text || res.statusText };
+      }
+      if (!res.ok) {
+        const msg =
+          (payload as { error?: string })?.error ??
+          `Upload failed (${res.status})`;
+        throw new Error(msg);
+      }
+      const data = payload as UploadResponse;
+      setUploadedFile({
+        id: data.id,
+        name: data.name,
+        duration: data.durationDisplay,
+        size: formatBytes(data.sizeBytes),
+        durationSeconds: data.durationSeconds,
+        sizeBytes: data.sizeBytes,
+        videoUrl: data.videoUrl,
+        thumbnails: data.thumbnails,
+      });
+    } catch (e) {
+      setError((e as Error).message || "업로드 실패");
+    } finally {
       setUploading(false);
-    }, 700);
+    }
   };
 
   const onPick = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
-    if (f) handleFile(f.name);
+    if (f) void uploadFile(f);
+    // Allow re-selecting the same file later
+    e.target.value = "";
   };
 
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
     const f = e.dataTransfer.files?.[0];
-    if (f) handleFile(f.name);
+    if (f) void uploadFile(f);
   };
 
   return (
@@ -87,25 +126,52 @@ export function UploadStep() {
           Step 01 · Upload
         </Badge>
         <h1 className="text-3xl font-bold tracking-tight text-slate-100 mb-2">
-          음성 파일을 업로드하세요
+          영상 파일을 업로드하세요
         </h1>
         <p className="text-slate-400 text-[15px]">
-          MP3, WAV, M4A 형식을 지원합니다. AI가 자동으로 텍스트를 추출하고 씬을 분석합니다.
+          MP4, MOV, WEBM, MKV 형식을 지원합니다. 업로드 후 자동으로 썸네일과
+          메타데이터를 추출합니다.
         </p>
       </header>
+
+      {error && (
+        <div
+          role="alert"
+          className="mb-6 flex items-start gap-3 rounded-lg border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-200"
+        >
+          <AlertCircle size={16} className="mt-0.5 shrink-0" />
+          <div className="flex-1 whitespace-pre-wrap break-words">{error}</div>
+          <button
+            onClick={() => setError(null)}
+            className="text-rose-300/70 hover:text-rose-100"
+            aria-label="오류 닫기"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
 
       {!uploadedFile ? (
         <div
           onDragOver={(e) => {
             e.preventDefault();
-            setDragOver(true);
+            if (!uploading) setDragOver(true);
           }}
           onDragLeave={() => setDragOver(false)}
-          onDrop={onDrop}
-          onClick={() => inputRef.current?.click()}
+          onDrop={(e) => {
+            if (uploading) {
+              e.preventDefault();
+              return;
+            }
+            onDrop(e);
+          }}
+          onClick={() => {
+            if (!uploading) inputRef.current?.click();
+          }}
           className={cn(
             "relative cursor-pointer rounded-2xl border-2 border-dashed transition-all duration-300 overflow-hidden",
             "bg-slate-900/40 backdrop-blur-sm",
+            uploading && "cursor-progress",
             dragOver
               ? "border-violet-400 bg-violet-500/5 scale-[1.01] glow-violet"
               : "border-slate-700 hover:border-violet-500/60 hover:bg-slate-900/70"
@@ -135,7 +201,7 @@ export function UploadStep() {
 
             <h2 className="text-xl font-semibold text-slate-100 mb-2">
               {uploading
-                ? "파일 분석 중..."
+                ? "업로드 및 분석 중..."
                 : dragOver
                 ? "여기에 놓아주세요"
                 : "파일을 끌어다 놓으세요"}
@@ -148,19 +214,21 @@ export function UploadStep() {
             </p>
 
             <div className="flex items-center gap-2 text-xs font-mono text-slate-500 nums">
-              <span className="px-2.5 py-1 rounded-md bg-slate-800/60 border border-slate-700/60">MP3</span>
-              <span className="px-2.5 py-1 rounded-md bg-slate-800/60 border border-slate-700/60">WAV</span>
-              <span className="px-2.5 py-1 rounded-md bg-slate-800/60 border border-slate-700/60">M4A</span>
+              <span className="px-2.5 py-1 rounded-md bg-slate-800/60 border border-slate-700/60">MP4</span>
+              <span className="px-2.5 py-1 rounded-md bg-slate-800/60 border border-slate-700/60">MOV</span>
+              <span className="px-2.5 py-1 rounded-md bg-slate-800/60 border border-slate-700/60">WEBM</span>
+              <span className="px-2.5 py-1 rounded-md bg-slate-800/60 border border-slate-700/60">MKV</span>
               <span className="text-slate-600 mx-1">·</span>
-              <span>최대 100MB</span>
+              <span>최대 200MB</span>
             </div>
 
             <input
               ref={inputRef}
               type="file"
-              accept=".mp3,.wav,.m4a,audio/*"
+              accept="video/*,.mp4,.mov,.webm,.mkv,.m4v"
               className="hidden"
               onChange={onPick}
+              disabled={uploading}
             />
           </div>
         </div>
@@ -168,7 +236,7 @@ export function UploadStep() {
         <Card elevated className="p-7 slide-in">
           <div className="flex items-start gap-5">
             <div className="relative flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 shadow-lg">
-              <FileAudio size={22} className="text-white" />
+              <FileVideo size={22} className="text-white" />
               <span className="absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full bg-emerald-500 flex items-center justify-center ring-2 ring-slate-900">
                 <CheckCircle2 size={12} className="text-white" />
               </span>
@@ -182,7 +250,7 @@ export function UploadStep() {
                   </div>
                   <div className="flex items-center gap-3 mt-1 text-xs text-slate-400 nums">
                     <span className="flex items-center gap-1">
-                      <Music4 size={12} />
+                      <Clock size={12} />
                       {uploadedFile.duration}
                     </span>
                     <span>·</span>
@@ -204,20 +272,41 @@ export function UploadStep() {
                 </button>
               </div>
 
+              {/* Simple cosmetic time bar (no real playback) */}
               <div className="mt-5 rounded-lg bg-slate-950/50 border border-slate-800/60 p-4">
-                <div className="flex items-center gap-3 mb-2">
-                  <button
-                    className="flex h-8 w-8 items-center justify-center rounded-full bg-violet-500 text-white hover:bg-violet-400 transition-colors"
-                    aria-label="재생"
-                  >
-                    <Play size={14} fill="currentColor" className="ml-0.5" />
-                  </button>
-                  <div className="flex-1 nums text-[11px] text-slate-500">
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                    <div className="h-full w-0 bg-gradient-to-r from-violet-600 to-violet-400" />
+                  </div>
+                  <div className="nums text-[11px] text-slate-500 shrink-0">
                     00:00 / {uploadedFile.duration}
                   </div>
                 </div>
-                <MockWaveform bars={72} />
               </div>
+
+              {/* Thumbnail filmstrip */}
+              {uploadedFile.thumbnails && uploadedFile.thumbnails.length > 0 && (
+                <div className="mt-5">
+                  <div className="flex items-center gap-2 mb-2 text-xs font-medium text-slate-300">
+                    <Camera size={12} className="text-violet-400" />
+                    <span>썸네일 (자동 추출)</span>
+                    <span className="text-slate-600 nums">
+                      · {uploadedFile.thumbnails.length}장
+                    </span>
+                  </div>
+                  <div className="flex gap-2 overflow-x-auto pb-1">
+                    {uploadedFile.thumbnails.map((src, i) => (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        key={src}
+                        src={src}
+                        alt={`thumbnail ${i + 1}`}
+                        className="h-16 w-28 object-cover rounded-md ring-1 ring-slate-800 hover:ring-violet-500/60 transition-all shrink-0"
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </Card>
