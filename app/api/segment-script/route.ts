@@ -54,10 +54,7 @@ export async function POST(request: Request) {
     const e = err as NodeJS.ErrnoException;
     if (e.code === "ENOENT") {
       return NextResponse.json(
-        {
-          error:
-            "codex CLI not found on PATH. Install OpenAI Codex CLI and run `codex login`.",
-        },
+        { error: e.message },
         { status: 500 },
       );
     }
