@@ -15,6 +15,7 @@ import {
   X,
   Camera,
   AlertCircle,
+  ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 
@@ -152,86 +153,99 @@ export function UploadStep() {
       )}
 
       {!uploadedFile ? (
-        <div
-          onDragOver={(e) => {
-            e.preventDefault();
-            if (!uploading) setDragOver(true);
-          }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={(e) => {
-            if (uploading) {
+        <>
+          <div
+            onDragOver={(e) => {
               e.preventDefault();
-              return;
-            }
-            onDrop(e);
-          }}
-          onClick={() => {
-            if (!uploading) inputRef.current?.click();
-          }}
-          className={cn(
-            "relative cursor-pointer rounded-2xl border-2 border-dashed transition-all duration-300 overflow-hidden",
-            "bg-slate-900/40 backdrop-blur-sm",
-            uploading && "cursor-progress",
-            dragOver
-              ? "border-violet-400 bg-violet-500/5 scale-[1.01] glow-violet"
-              : "border-slate-700 hover:border-violet-500/60 hover:bg-slate-900/70"
-          )}
-        >
-          {/* Background pattern */}
-          <div className="absolute inset-0 bg-stripes opacity-60 pointer-events-none" />
+              if (!uploading) setDragOver(true);
+            }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={(e) => {
+              if (uploading) {
+                e.preventDefault();
+                return;
+              }
+              onDrop(e);
+            }}
+            onClick={() => {
+              if (!uploading) inputRef.current?.click();
+            }}
+            className={cn(
+              "relative cursor-pointer rounded-2xl border-2 border-dashed transition-all duration-300 overflow-hidden",
+              "bg-slate-900/40 backdrop-blur-sm",
+              uploading && "cursor-progress",
+              dragOver
+                ? "border-violet-400 bg-violet-500/5 scale-[1.01] glow-violet"
+                : "border-slate-700 hover:border-violet-500/60 hover:bg-slate-900/70"
+            )}
+          >
+            {/* Background pattern */}
+            <div className="absolute inset-0 bg-stripes opacity-60 pointer-events-none" />
 
-          <div className="relative px-8 py-20 flex flex-col items-center text-center">
-            <div
-              className={cn(
-                "relative flex h-20 w-20 items-center justify-center rounded-2xl mb-6 transition-all",
-                dragOver
-                  ? "bg-violet-500 text-white"
-                  : "bg-slate-800/70 text-violet-400"
-              )}
-            >
-              {uploading ? (
-                <Loader2 className="animate-spin" size={36} />
-              ) : (
-                <UploadCloud size={36} strokeWidth={1.6} />
-              )}
-              {!uploading && (
-                <span className="absolute -inset-2 rounded-3xl border border-violet-500/20 pulse-soft" />
-              )}
+            <div className="relative px-8 py-20 flex flex-col items-center text-center">
+              <div
+                className={cn(
+                  "relative flex h-20 w-20 items-center justify-center rounded-2xl mb-6 transition-all",
+                  dragOver
+                    ? "bg-violet-500 text-white"
+                    : "bg-slate-800/70 text-violet-400"
+                )}
+              >
+                {uploading ? (
+                  <Loader2 className="animate-spin" size={36} />
+                ) : (
+                  <UploadCloud size={36} strokeWidth={1.6} />
+                )}
+                {!uploading && (
+                  <span className="absolute -inset-2 rounded-3xl border border-violet-500/20 pulse-soft" />
+                )}
+              </div>
+
+              <h2 className="text-xl font-semibold text-slate-100 mb-2">
+                {uploading
+                  ? "업로드 및 분석 중..."
+                  : dragOver
+                  ? "여기에 놓아주세요"
+                  : "파일을 끌어다 놓으세요"}
+              </h2>
+              <p className="text-slate-400 text-sm mb-6">
+                또는{" "}
+                <span className="text-violet-300 underline underline-offset-4 decoration-violet-500/40">
+                  컴퓨터에서 선택
+                </span>
+              </p>
+
+              <div className="flex items-center gap-2 text-xs font-mono text-slate-500 nums">
+                <span className="px-2.5 py-1 rounded-md bg-slate-800/60 border border-slate-700/60">MP4</span>
+                <span className="px-2.5 py-1 rounded-md bg-slate-800/60 border border-slate-700/60">MOV</span>
+                <span className="px-2.5 py-1 rounded-md bg-slate-800/60 border border-slate-700/60">WEBM</span>
+                <span className="px-2.5 py-1 rounded-md bg-slate-800/60 border border-slate-700/60">MKV</span>
+                <span className="text-slate-600 mx-1">·</span>
+                <span>최대 200MB</span>
+              </div>
+
+              <input
+                ref={inputRef}
+                type="file"
+                accept="video/*,.mp4,.mov,.webm,.mkv,.m4v"
+                className="hidden"
+                onChange={onPick}
+                disabled={uploading}
+              />
             </div>
-
-            <h2 className="text-xl font-semibold text-slate-100 mb-2">
-              {uploading
-                ? "업로드 및 분석 중..."
-                : dragOver
-                ? "여기에 놓아주세요"
-                : "파일을 끌어다 놓으세요"}
-            </h2>
-            <p className="text-slate-400 text-sm mb-6">
-              또는{" "}
-              <span className="text-violet-300 underline underline-offset-4 decoration-violet-500/40">
-                컴퓨터에서 선택
-              </span>
-            </p>
-
-            <div className="flex items-center gap-2 text-xs font-mono text-slate-500 nums">
-              <span className="px-2.5 py-1 rounded-md bg-slate-800/60 border border-slate-700/60">MP4</span>
-              <span className="px-2.5 py-1 rounded-md bg-slate-800/60 border border-slate-700/60">MOV</span>
-              <span className="px-2.5 py-1 rounded-md bg-slate-800/60 border border-slate-700/60">WEBM</span>
-              <span className="px-2.5 py-1 rounded-md bg-slate-800/60 border border-slate-700/60">MKV</span>
-              <span className="text-slate-600 mx-1">·</span>
-              <span>최대 200MB</span>
-            </div>
-
-            <input
-              ref={inputRef}
-              type="file"
-              accept="video/*,.mp4,.mov,.webm,.mkv,.m4v"
-              className="hidden"
-              onChange={onPick}
-              disabled={uploading}
-            />
           </div>
-        </div>
+
+          {/* Skip to text-only button */}
+          <div className="mt-4 text-center">
+            <button
+              onClick={goNext}
+              className="text-[12px] text-slate-500 hover:text-violet-300 transition-colors inline-flex items-center gap-1.5 underline underline-offset-4 decoration-slate-700 hover:decoration-violet-500/60"
+            >
+              또는 텍스트만으로 시작하기
+              <ChevronRight size={12} />
+            </button>
+          </div>
+        </>
       ) : (
         <Card elevated className="p-7 slide-in">
           <div className="flex items-start gap-5">
@@ -315,7 +329,7 @@ export function UploadStep() {
       {/* Footer actions */}
       <div className="mt-10 flex items-center justify-between">
         <div className="text-[11px] font-mono uppercase tracking-[0.16em] text-slate-600">
-          {uploadedFile ? "Ready · 다음 단계로 진행하세요" : "Waiting for file..."}
+          {uploadedFile ? "Ready · 다음 단계로 진행하세요" : "텍스트만으로도 시작 가능 · 파일 업로드 시 자동 분석"}
         </div>
         <Button
           variant="primary"
