@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useStudio, TEMPLATE_OPTIONS } from "@/lib/store";
+import { useStudio, TEMPLATE_OPTIONS, type TemplateId, type TemplateCandidate } from "@/lib/store";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
@@ -49,10 +49,65 @@ export function AnalysisStep() {
   const goPrev = useStudio((s) => s.goPrev);
 
   const [analyzing, setAnalyzing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const reAnalyze = () => {
+  const templateLabelById = (id: TemplateId): string =>
+    TEMPLATE_OPTIONS.find((t) => t.id === id)?.label ?? id;
+
+  const reAnalyze = async () => {
     setAnalyzing(true);
-    setTimeout(() => setAnalyzing(false), 1500);
+    setError(null);
+    try {
+      const res = await fetch("/api/analyze-templates", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          scenes: scenes.map((s) => ({
+            id: s.id,
+            title: s.title,
+            narration: s.narration,
+            current: s.template,
+          })),
+        }),
+      });
+
+      if (!res.ok) {
+        let msg = `HTTP ${res.status}`;
+        try {
+          const j = (await res.json()) as { error?: string };
+          if (j?.error) msg = j.error;
+        } catch {
+          // ignore
+        }
+        throw new Error(msg);
+      }
+
+      const data = (await res.json()) as {
+        recommendations?: {
+          sceneId: string;
+          candidates: TemplateCandidate[];
+        }[];
+      };
+
+      const recs = data.recommendations ?? [];
+      const sceneById = new Map(scenes.map((s) => [s.id, s] as const));
+      for (const rec of recs) {
+        const scene = sceneById.get(rec.sceneId);
+        if (!scene) continue;
+        const candidates = rec.candidates ?? [];
+        if (candidates.length === 0) continue;
+        updateScene(scene.id, {
+          templateCandidates: candidates,
+          template: candidates[0]?.templateId ?? scene.template,
+        });
+      }
+    } catch (e) {
+      setError(
+        `분석 실패: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    } finally {
+      setAnalyzing(false);
+    }
   };
 
   return (
@@ -87,6 +142,11 @@ export function AnalysisStep() {
       <div className="flex-1 min-h-0 flex">
         {/* Main: scenes */}
         <div className="flex-1 min-w-0 overflow-y-auto px-8 py-6">
+          {error && (
+            <div className="mb-4 max-w-[1100px] rounded-md border border-red-500/40 bg-red-950/40 px-4 py-2.5 text-[13px] text-red-200">
+              {error}
+            </div>
+          )}
           <div className="space-y-4 max-w-[1100px]">
             {scenes.map((scene, idx) => (
               <Card
@@ -143,7 +203,7 @@ export function AnalysisStep() {
                   </div>
 
                   {/* Template select */}
-                  <div className="shrink-0 w-40">
+                  <div className="shrink-0 w-48">
                     <div className="text-[10px] font-mono uppercase tracking-[0.16em] text-slate-500 mb-1.5">
                       Template
                     </div>
@@ -154,6 +214,31 @@ export function AnalysisStep() {
                       size="sm"
                       className="w-full"
                     />
+                    {scene.templateCandidates && scene.templateCandidates.length > 0 && (
+                      <div className="mt-1.5 flex flex-wrap gap-1">
+                        {scene.templateCandidates.slice(0, 3).map((cand) => {
+                          const active = scene.template === cand.templateId;
+                          return (
+                            <button
+                              key={cand.templateId}
+                              type="button"
+                              onClick={() =>
+                                updateScene(scene.id, { template: cand.templateId })
+                              }
+                              title={cand.reason}
+                              className={cn(
+                                "px-1.5 py-0.5 rounded-md font-mono text-[10px] leading-tight border transition-colors",
+                                active
+                                  ? "border-violet-400/70 bg-violet-500/15 text-violet-100"
+                                  : "border-slate-700/70 bg-slate-900/40 text-slate-300 hover:border-violet-500/50 hover:text-violet-200",
+                              )}
+                            >
+                              {templateLabelById(cand.templateId)}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
 
                   {/* Mini preview */}

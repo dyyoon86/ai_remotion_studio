@@ -80,6 +80,11 @@ export const TEMPLATE_OPTIONS: { id: TemplateId; label: string }[] = [
   { id: "comparisonV2", label: "비교분석 V2" },
 ];
 
+export type TemplateCandidate = {
+  templateId: TemplateId;
+  reason: string;
+};
+
 export type Scene = {
   id: string;
   index: number;
@@ -90,6 +95,7 @@ export type Scene = {
   titleMeta: string;
   subtitleMeta: string;
   accentColor: string;
+  templateCandidates?: TemplateCandidate[];
 };
 
 export type TranscriptLine = {
