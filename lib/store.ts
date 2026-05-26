@@ -142,16 +142,19 @@ type StudioState = {
   renderProgress: Record<string, number>;
   isRendering: boolean;
   renderComplete: boolean;
+  analyzingScript: boolean;
 
   setStep: (step: number) => void;
   goNext: () => void;
   goPrev: () => void;
   setUploadedFile: (file: UploadedFile) => void;
   setScript: (script: string) => void;
+  setScenes: (scenes: Scene[]) => void;
   updateScene: (id: string, patch: Partial<Scene>) => void;
   setRenderProgress: (id: string, progress: number) => void;
   setIsRendering: (v: boolean) => void;
   setRenderComplete: (v: boolean) => void;
+  setAnalyzingScript: (v: boolean) => void;
   resetAll: () => void;
 };
 
@@ -164,6 +167,7 @@ const initial = {
   renderProgress: {} as Record<string, number>,
   isRendering: false,
   renderComplete: false,
+  analyzingScript: false,
 };
 
 export const useStudio = create<StudioState>((set, get) => ({
@@ -184,6 +188,8 @@ export const useStudio = create<StudioState>((set, get) => ({
 
   setScript: (script) => set({ script }),
 
+  setScenes: (scenes) => set({ scenes }),
+
   updateScene: (id, patch) =>
     set((s) => ({
       scenes: s.scenes.map((sc) => (sc.id === id ? { ...sc, ...patch } : sc)),
@@ -195,6 +201,8 @@ export const useStudio = create<StudioState>((set, get) => ({
   setIsRendering: (v) => set({ isRendering: v }),
 
   setRenderComplete: (v) => set({ renderComplete: v }),
+
+  setAnalyzingScript: (v) => set({ analyzingScript: v }),
 
   resetAll: () => {
     set({

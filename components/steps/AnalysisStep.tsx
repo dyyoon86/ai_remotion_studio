@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/Badge";
 import { ScenePlayer } from "@/components/ScenePlayer";
 import {
   ArrowLeft, ArrowRight, ImageIcon, Sparkles,
-  ListMusic, Wand2, RefreshCw, Mic,
+  ListMusic, Wand2, RefreshCw, Mic, FileWarning,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 
@@ -109,6 +109,35 @@ export function AnalysisStep() {
       setAnalyzing(false);
     }
   };
+
+  // Defensive empty state — should rarely trigger since Step 2 now seeds scenes.
+  if (scenes.length === 0) {
+    return (
+      <div className="flex h-[calc(100vh-128px)] items-center justify-center px-8 py-10">
+        <Card className="max-w-md w-full p-8 text-center">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-slate-800/80 border border-slate-700/70">
+            <FileWarning size={20} className="text-violet-300" />
+          </div>
+          <Badge variant="violet" className="mb-3">
+            Step 03 · Analyze
+          </Badge>
+          <h2 className="text-xl font-semibold text-slate-100 mb-2">
+            씬이 없습니다.
+          </h2>
+          <p className="text-sm text-slate-400 mb-6">
+            Step 2 에서 대본을 입력하세요.
+          </p>
+          <Button
+            variant="primary"
+            leftIcon={<ArrowLeft size={16} />}
+            onClick={goPrev}
+          >
+            대본 입력으로 돌아가기
+          </Button>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-[calc(100vh-128px)]">
