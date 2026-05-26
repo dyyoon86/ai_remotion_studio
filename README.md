@@ -1,36 +1,62 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Remotion AI Studio
+
+Next.js + Remotion 기반 AI 비디오 스튜디오. 영상 업로드 → 대본 입력 → 음성 인식/AI 장면 분석 → 템플릿 매핑 → 렌더링까지 단계별 워크플로우를 제공한다.
+
+## Stack
+
+- **Next.js 16** (App Router) + React 19
+- **Remotion 4** + `@remotion/player` (브라우저 프리뷰)
+- **Zustand** (상태 관리)
+- **Tailwind CSS 4**
+- **TypeScript 5**
+
+## Workflow
+
+5단계 스테퍼 기반:
+
+1. **업로드** — 소스 영상 등록
+2. **대본 입력** — 나레이션/스크립트 작성
+3. **음성 인식 + AI 분석** — STT 및 장면 분리
+4. **파이널 리뷰** — 씬별 템플릿/메타데이터/액센트 색상 확인
+5. **렌더링** — Remotion 컴포지션으로 출력
+
+## Templates
+
+`remotion/registry.ts` 에 등록된 4종 (1920×1080 / 30fps / 기본 90프레임):
+
+| ID | 라벨 | 컴포넌트 |
+|----|------|----------|
+| `intro` | 인트로 | `IntroTemplate` |
+| `comparison` | 비교분석 | `ComparisonTemplate` |
+| `highlight` | 텍스트강조 | `TextHighlightTemplate` |
+| `imagecard` | 이미지카드 | `ImageCardTemplate` |
 
 ## Getting Started
 
-First, run the development server:
-
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+http://localhost:3000 에 접속.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Scripts
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| 명령 | 동작 |
+|------|------|
+| `npm run dev` | 개발 서버 |
+| `npm run build` | 프로덕션 빌드 |
+| `npm start` | 프로덕션 서버 |
 
-## Learn More
+## Project Layout
 
-To learn more about Next.js, take a look at the following resources:
+```
+app/              # Next.js App Router (page, layout, templates/, history/, logo/)
+components/       # DashboardShell, Sidebar, TopStepper, ScenePlayer, steps/
+remotion/         # Root.tsx, registry.ts, *Template.tsx
+lib/              # store.ts (Zustand), mock-data.ts, cn.ts
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Notes
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- 이 저장소의 Next.js 는 학습 데이터 시점과 다른 API/관례를 사용한다. 작업 전에 `node_modules/next/dist/docs/` 의 가이드를 확인할 것 (`AGENTS.md` 참고).
