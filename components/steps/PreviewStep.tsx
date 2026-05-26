@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/Badge";
 import { ScenePlayer } from "@/components/ScenePlayer";
 import {
   ArrowLeft, Play, Type, AlignLeft, Palette,
-  Image as ImageIcon, Tag, FilmIcon,
+  Image as ImageIcon, Tag, FilmIcon, MessageSquare,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 
@@ -99,6 +99,22 @@ export function PreviewStep() {
                     onChange={(e) => updateScene(scene.id, { subtitleMeta: e.target.value })}
                     placeholder="설명 텍스트..."
                   />
+                </div>
+
+                {/* Narration */}
+                <div className="col-span-2">
+                  <Label icon={<MessageSquare size={11} />} text="나레이션" />
+                  <div className="relative">
+                    <textarea
+                      value={scene.narration}
+                      onChange={(e) => updateScene(scene.id, { narration: e.target.value })}
+                      placeholder="씬에 들어갈 나레이션을 입력하세요..."
+                      className="w-full min-h-[88px] resize-y rounded-md text-sm text-slate-100 placeholder:text-slate-500 transition-all ring-focus bg-slate-900/70 border border-slate-700/70 px-3 py-2 pb-6 focus:border-violet-500/60 focus:bg-slate-900"
+                    />
+                    <span className="pointer-events-none absolute bottom-1.5 right-2 font-mono text-[10px] text-slate-500 nums">
+                      {scene.narration.length} chars
+                    </span>
+                  </div>
                 </div>
 
                 {/* Template (read-only display, can change) */}

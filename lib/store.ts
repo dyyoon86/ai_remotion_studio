@@ -7,13 +7,77 @@ export type TemplateId =
   | "comparison"
   | "intro"
   | "highlight"
-  | "imagecard";
+  | "imagecard"
+  | "flowSteps"
+  | "keywordImpact"
+  | "gridCard"
+  | "numberList"
+  | "layerStack"
+  | "bidirectional"
+  | "chatInterface"
+  | "phoneChat"
+  | "gaugeMeter"
+  | "treeExplorer"
+  | "multiPanelDash"
+  | "premiumIntro"
+  | "floatingCard3D"
+  | "premiumMetric"
+  | "gridExplosion"
+  | "kineticTypo"
+  | "redditStory"
+  | "imageEmphasis"
+  | "imageEmphasisV2"
+  | "logoBrand"
+  | "premiumFunnel"
+  | "strategicBlueprint"
+  | "orbitTimeline"
+  | "logicFlow"
+  | "hologramCore"
+  | "cinematicMatrix"
+  | "quantumSingularity"
+  | "logoDualSnap"
+  | "logoClone"
+  | "logoMetrics"
+  | "kineticCompact"
+  | "comparisonV2";
 
 export const TEMPLATE_OPTIONS: { id: TemplateId; label: string }[] = [
   { id: "comparison", label: "비교분석" },
   { id: "intro", label: "인트로" },
   { id: "highlight", label: "텍스트강조" },
   { id: "imagecard", label: "이미지카드" },
+  { id: "flowSteps", label: "단계별 흐름도" },
+  { id: "keywordImpact", label: "키워드 임팩트" },
+  { id: "gridCard", label: "그리드 카드" },
+  { id: "numberList", label: "번호리스트" },
+  { id: "layerStack", label: "레이어 스택" },
+  { id: "bidirectional", label: "양방향 연결" },
+  { id: "chatInterface", label: "대화 인터페이스" },
+  { id: "phoneChat", label: "스마트폰 채팅" },
+  { id: "gaugeMeter", label: "게이지 측정" },
+  { id: "treeExplorer", label: "트리 탐색" },
+  { id: "multiPanelDash", label: "다중 패널 대시보드" },
+  { id: "premiumIntro", label: "프리미엄 인트로" },
+  { id: "floatingCard3D", label: "3D 플로팅 카드" },
+  { id: "premiumMetric", label: "프리미엄 메트릭" },
+  { id: "gridExplosion", label: "그리드 익스플로전" },
+  { id: "kineticTypo", label: "키네틱 타이포" },
+  { id: "redditStory", label: "레딧 스토리 모드" },
+  { id: "imageEmphasis", label: "이미지 강조" },
+  { id: "imageEmphasisV2", label: "이미지강조 V2" },
+  { id: "logoBrand", label: "로고(브랜드)강조" },
+  { id: "premiumFunnel", label: "프리미엄 퍼널" },
+  { id: "strategicBlueprint", label: "전략적 블루프린트" },
+  { id: "orbitTimeline", label: "궤도 타임라인" },
+  { id: "logicFlow", label: "논리 흐름도" },
+  { id: "hologramCore", label: "홀로그램 코어" },
+  { id: "cinematicMatrix", label: "시네마틱 매트릭스" },
+  { id: "quantumSingularity", label: "퀀텀 싱귤래리티" },
+  { id: "logoDualSnap", label: "로고 듀얼 스냅" },
+  { id: "logoClone", label: "로고분신술" },
+  { id: "logoMetrics", label: "로고 강조 메트릭스" },
+  { id: "kineticCompact", label: "키네틱 콤팩트" },
+  { id: "comparisonV2", label: "비교분석 V2" },
 ];
 
 export type Scene = {
