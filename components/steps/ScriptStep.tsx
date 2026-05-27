@@ -22,6 +22,13 @@ type SegmentResponse = {
   error?: string;
 };
 
+type AnalyzeResponse = {
+  recommendations?: {
+    sceneId: string;
+    candidates: import("@/lib/store").TemplateCandidate[];
+  }[];
+};
+
 export function ScriptStep() {
   const script = useStudio((s) => s.script);
   const setScript = useStudio((s) => s.setScript);
@@ -34,6 +41,7 @@ export function ScriptStep() {
 
   const [pulse, setPulse] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [analyzingPhase, setAnalyzingPhase] = useState<"segment" | "recommend" | null>(null);
 
   // Light typing-feedback animation on long pauses, just visual flavor
   useEffect(() => {
@@ -60,6 +68,7 @@ export function ScriptStep() {
     }
 
     setAnalyzingScript(true);
+    setAnalyzingPhase("segment");
     try {
       const res = await fetch("/api/segment-script", {
         method: "POST",
@@ -98,6 +107,42 @@ export function ScriptStep() {
         image: undefined,
       }));
 
+      // Phase 2: auto-recommend templates for the freshly built scenes
+      setAnalyzingPhase("recommend");
+      try {
+        const recRes = await fetch("/api/analyze-templates", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            scenes: newScenes.map((s) => ({
+              id: s.id,
+              title: s.title,
+              narration: s.narration,
+              current: s.template,
+            })),
+          }),
+        });
+
+        if (recRes.ok) {
+          const recData = (await recRes.json()) as AnalyzeResponse;
+          const recs = recData.recommendations ?? [];
+          const sceneById = new Map(newScenes.map((s) => [s.id, s] as const));
+          for (const rec of recs) {
+            const scene = sceneById.get(rec.sceneId);
+            if (!scene) continue;
+            const candidates = rec.candidates ?? [];
+            if (candidates.length === 0) continue;
+            scene.template = candidates[0]?.templateId ?? scene.template;
+            scene.templateCandidates = candidates;
+          }
+        } else {
+          console.error("[ScriptStep] analyze-templates returned", recRes.status);
+        }
+      } catch (recErr) {
+        // Silently swallow — user can still run 재분석 manually in Step 3
+        console.error("[ScriptStep] analyze-templates failed:", recErr);
+      }
+
       setScenes(newScenes);
       setScenesSource("segmented");
       goNext();
@@ -107,6 +152,7 @@ export function ScriptStep() {
       );
     } finally {
       setAnalyzingScript(false);
+      setAnalyzingPhase(null);
     }
   };
 
@@ -207,7 +253,11 @@ export function ScriptStep() {
             )
           }
         >
-          {analyzingScript ? "분석 중..." : "다음 단계"}
+          {analyzingPhase === "segment"
+            ? "씬 분할 중..."
+            : analyzingPhase === "recommend"
+              ? "템플릿 추천 중..."
+              : "다음 단계"}
         </Button>
       </div>
     </div>
