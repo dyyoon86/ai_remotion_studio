@@ -5,7 +5,7 @@ import { INITIAL_SCENES, INITIAL_TRANSCRIPT } from "./mock-data";
 
 export type ScenesSource = "mock" | "segmented" | "manual";
 
-export type TranscriptSource = "mock" | "stt";
+export type TranscriptSource = "mock" | "stt" | "derived";
 
 export type TemplateId =
   | "comparison"
@@ -160,6 +160,7 @@ type StudioState = {
   setScenesSource: (source: ScenesSource) => void;
   updateScene: (id: string, patch: Partial<Scene>) => void;
   setTranscript: (t: TranscriptLine[]) => void;
+  setDerivedTranscript: (t: TranscriptLine[]) => void;
   setTranscribing: (v: boolean) => void;
   setRenderProgress: (id: string, progress: number) => void;
   setIsRendering: (v: boolean) => void;
@@ -211,6 +212,8 @@ export const useStudio = create<StudioState>((set, get) => ({
     })),
 
   setTranscript: (t) => set({ transcript: t, transcriptSource: "stt" }),
+
+  setDerivedTranscript: (t) => set({ transcript: t, transcriptSource: "derived" }),
 
   setTranscribing: (v) => set({ transcribing: v }),
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useStudio, ACCENT_PRESETS, type Scene } from "@/lib/store";
+import { useStudio, ACCENT_PRESETS, type Scene, type TranscriptLine } from "@/lib/store";
 import { Button } from "@/components/ui/Button";
 import { Textarea } from "@/components/ui/Textarea";
 import { Badge } from "@/components/ui/Badge";
@@ -38,6 +38,7 @@ export function ScriptStep() {
   const goPrev = useStudio((s) => s.goPrev);
   const analyzingScript = useStudio((s) => s.analyzingScript);
   const setAnalyzingScript = useStudio((s) => s.setAnalyzingScript);
+  const setDerivedTranscript = useStudio((s) => s.setDerivedTranscript);
 
   const [pulse, setPulse] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -143,8 +144,16 @@ export function ScriptStep() {
         console.error("[ScriptStep] analyze-templates failed:", recErr);
       }
 
+      const derivedTranscript: TranscriptLine[] = newScenes.map((s, i) => ({
+        id: `derived-${i + 1}`,
+        timestamp: "—",
+        text: s.narration,
+        sceneId: s.id,
+      }));
+
       setScenes(newScenes);
       setScenesSource("segmented");
+      setDerivedTranscript(derivedTranscript);
       goNext();
     } catch (e) {
       setError(

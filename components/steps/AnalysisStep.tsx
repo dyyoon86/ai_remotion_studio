@@ -220,6 +220,11 @@ export function AnalysisStep() {
                   <CheckCircle2 size={11} />
                   STT 완료 · {transcript.length} segments
                 </span>
+              ) : transcriptSource === "derived" ? (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-mono bg-cyan-500/10 text-cyan-300 ring-1 ring-cyan-500/30">
+                  <FileText size={11} />
+                  대본 기반 자막 · {transcript.length} segments
+                </span>
               ) : (
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-mono bg-amber-500/10 text-amber-300 ring-1 ring-amber-500/30">
                   <AlertTriangle size={11} />
@@ -404,6 +409,10 @@ export function AnalysisStep() {
                 <Badge variant="success" className="ml-auto !text-[9px]">
                   STT
                 </Badge>
+              ) : transcriptSource === "derived" ? (
+                <Badge variant="info" className="ml-auto !text-[9px]">
+                  SCRIPT
+                </Badge>
               ) : (
                 <Badge variant="warning" className="ml-auto !text-[9px]">
                   MOCK
@@ -413,7 +422,9 @@ export function AnalysisStep() {
             <p className="text-[11px] text-slate-500">
               {transcriptSource === "stt"
                 ? `총 ${transcript.length}개 · faster-whisper / ${sttLanguage ?? "ko"}`
-                : `총 ${transcript.length}개 · STT 모듈 미구현 (목업)`}
+                : transcriptSource === "derived"
+                  ? `총 ${transcript.length}개 · 대본에서 추출 (타임스탬프 없음)`
+                  : `총 ${transcript.length}개 · STT 모듈 미구현 (목업)`}
             </p>
           </div>
 
