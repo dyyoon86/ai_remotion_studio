@@ -5,6 +5,8 @@ import { INITIAL_SCENES, INITIAL_TRANSCRIPT } from "./mock-data";
 
 export type ScenesSource = "mock" | "segmented" | "manual";
 
+export type TranscriptSource = "mock" | "stt";
+
 export type TemplateId =
   | "comparison"
   | "intro"
@@ -142,6 +144,8 @@ type StudioState = {
   scenes: Scene[];
   scenesSource: ScenesSource;
   transcript: TranscriptLine[];
+  transcriptSource: TranscriptSource;
+  transcribing: boolean;
   renderProgress: Record<string, number>;
   isRendering: boolean;
   renderComplete: boolean;
@@ -155,6 +159,8 @@ type StudioState = {
   setScenes: (scenes: Scene[]) => void;
   setScenesSource: (source: ScenesSource) => void;
   updateScene: (id: string, patch: Partial<Scene>) => void;
+  setTranscript: (t: TranscriptLine[]) => void;
+  setTranscribing: (v: boolean) => void;
   setRenderProgress: (id: string, progress: number) => void;
   setIsRendering: (v: boolean) => void;
   setRenderComplete: (v: boolean) => void;
@@ -169,6 +175,8 @@ const initial = {
   scenes: INITIAL_SCENES,
   scenesSource: "mock" as ScenesSource,
   transcript: INITIAL_TRANSCRIPT,
+  transcriptSource: "mock" as TranscriptSource,
+  transcribing: false,
   renderProgress: {} as Record<string, number>,
   isRendering: false,
   renderComplete: false,
@@ -201,6 +209,10 @@ export const useStudio = create<StudioState>((set, get) => ({
     set((s) => ({
       scenes: s.scenes.map((sc) => (sc.id === id ? { ...sc, ...patch } : sc)),
     })),
+
+  setTranscript: (t) => set({ transcript: t, transcriptSource: "stt" }),
+
+  setTranscribing: (v) => set({ transcribing: v }),
 
   setRenderProgress: (id, progress) =>
     set((s) => ({ renderProgress: { ...s.renderProgress, [id]: progress } })),

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useStudio, TEMPLATE_OPTIONS, type TemplateId, type TemplateCandidate } from "@/lib/store";
+import { useStudio, TEMPLATE_OPTIONS, type TemplateId, type TemplateCandidate, type TranscriptLine } from "@/lib/store";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
@@ -11,7 +11,7 @@ import { ScenePlayer } from "@/components/ScenePlayer";
 import {
   ArrowLeft, ArrowRight, ImageIcon, Sparkles,
   ListMusic, Wand2, RefreshCw, Mic, FileWarning,
-  FileText, AlertTriangle,
+  FileText, AlertTriangle, CheckCircle2, Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 
@@ -47,11 +47,18 @@ export function AnalysisStep() {
   const scenesSource = useStudio((s) => s.scenesSource);
   const updateScene = useStudio((s) => s.updateScene);
   const transcript = useStudio((s) => s.transcript);
+  const transcriptSource = useStudio((s) => s.transcriptSource);
+  const transcribing = useStudio((s) => s.transcribing);
+  const setTranscript = useStudio((s) => s.setTranscript);
+  const setTranscribing = useStudio((s) => s.setTranscribing);
+  const uploadedFile = useStudio((s) => s.uploadedFile);
   const goNext = useStudio((s) => s.goNext);
   const goPrev = useStudio((s) => s.goPrev);
 
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sttError, setSttError] = useState<string | null>(null);
+  const [sttLanguage, setSttLanguage] = useState<string | null>(null);
 
   const templateLabelById = (id: TemplateId): string =>
     TEMPLATE_OPTIONS.find((t) => t.id === id)?.label ?? id;
@@ -112,6 +119,46 @@ export function AnalysisStep() {
     }
   };
 
+  const runSTT = async () => {
+    if (!uploadedFile?.id) return;
+    setTranscribing(true);
+    setSttError(null);
+    try {
+      const res = await fetch("/api/transcribe", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ videoId: uploadedFile.id }),
+      });
+
+      if (!res.ok) {
+        let msg = `HTTP ${res.status}`;
+        try {
+          const j = (await res.json()) as { error?: string };
+          if (j?.error) msg = j.error;
+        } catch {
+          // ignore
+        }
+        throw new Error(msg);
+      }
+
+      const data = (await res.json()) as {
+        transcript: TranscriptLine[];
+        language?: string;
+        durationSeconds?: number;
+        segmentCount: number;
+      };
+
+      setTranscript(data.transcript);
+      setSttLanguage(data.language ?? null);
+    } catch (e) {
+      setSttError(
+        `STT 실패: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    } finally {
+      setTranscribing(false);
+    }
+  };
+
   // Defensive empty state — should rarely trigger since Step 2 now seeds scenes.
   if (scenes.length === 0) {
     return (
@@ -168,22 +215,52 @@ export function AnalysisStep() {
                   예시 데이터 · {scenes.length}씬
                 </span>
               )}
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-mono bg-amber-500/10 text-amber-300 ring-1 ring-amber-500/30">
-                <AlertTriangle size={11} />
-                STT 미구현 · 더미 자막
-              </span>
+              {transcriptSource === "stt" ? (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-mono bg-emerald-500/10 text-emerald-300 ring-1 ring-emerald-500/30">
+                  <CheckCircle2 size={11} />
+                  STT 완료 · {transcript.length} segments
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-mono bg-amber-500/10 text-amber-300 ring-1 ring-amber-500/30">
+                  <AlertTriangle size={11} />
+                  STT 미구현 · 더미 자막
+                </span>
+              )}
             </div>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            leftIcon={<RefreshCw size={14} className={analyzing ? "animate-spin" : ""} />}
-            onClick={reAnalyze}
-            disabled={analyzing}
-          >
-            {analyzing ? "재분석 중..." : "재분석"}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              leftIcon={
+                transcribing ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <Mic size={14} />
+                )
+              }
+              onClick={runSTT}
+              disabled={transcribing || !uploadedFile?.id}
+              title={!uploadedFile?.id ? "비디오를 먼저 업로드하세요" : undefined}
+            >
+              {transcribing ? "음성 인식 중..." : "STT 실행"}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              leftIcon={<RefreshCw size={14} className={analyzing ? "animate-spin" : ""} />}
+              onClick={reAnalyze}
+              disabled={analyzing}
+            >
+              {analyzing ? "재분석 중..." : "재분석"}
+            </Button>
+          </div>
         </div>
+        {sttError && (
+          <div className="mt-3 rounded-md border border-red-500/40 bg-red-950/40 px-4 py-2.5 text-[13px] text-red-200">
+            {sttError}
+          </div>
+        )}
       </div>
 
       {/* Body: scenes list + right panel */}
@@ -323,12 +400,20 @@ export function AnalysisStep() {
             <div className="flex items-center gap-2 mb-1">
               <ListMusic size={15} className="text-violet-400" />
               <h3 className="text-sm font-semibold text-slate-100">전체 자막</h3>
-              <Badge variant="warning" className="ml-auto !text-[9px]">
-                MOCK
-              </Badge>
+              {transcriptSource === "stt" ? (
+                <Badge variant="success" className="ml-auto !text-[9px]">
+                  STT
+                </Badge>
+              ) : (
+                <Badge variant="warning" className="ml-auto !text-[9px]">
+                  MOCK
+                </Badge>
+              )}
             </div>
             <p className="text-[11px] text-slate-500">
-              총 {transcript.length}개 · STT 모듈 미구현 (목업)
+              {transcriptSource === "stt"
+                ? `총 ${transcript.length}개 · faster-whisper / ${sttLanguage ?? "ko"}`
+                : `총 ${transcript.length}개 · STT 모듈 미구현 (목업)`}
             </p>
           </div>
 
