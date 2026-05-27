@@ -32,7 +32,7 @@ function resolveCodexPath(): string {
           ? "x86_64-pc-windows-msvc"
           : null;
     if (archSlug && triple) {
-      const exe = join(
+      const vendorBase = join(
         nodeDir,
         "node_modules",
         "@openai",
@@ -42,10 +42,13 @@ function resolveCodexPath(): string {
         `codex-win32-${archSlug}`,
         "vendor",
         triple,
-        "codex",
-        "codex.exe",
       );
-      if (existsSync(exe)) return exe;
+      // package layout has changed between releases: was `<vendor>/codex/codex.exe`,
+      // newer is `<vendor>/bin/codex.exe`. Try both.
+      for (const subdir of ["bin", "codex"]) {
+        const exe = join(vendorBase, subdir, "codex.exe");
+        if (existsSync(exe)) return exe;
+      }
     }
   }
 
