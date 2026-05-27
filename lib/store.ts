@@ -3,6 +3,8 @@
 import { create } from "zustand";
 import { INITIAL_SCENES, INITIAL_TRANSCRIPT } from "./mock-data";
 
+export type ScenesSource = "mock" | "segmented" | "manual";
+
 export type TemplateId =
   | "comparison"
   | "intro"
@@ -138,6 +140,7 @@ type StudioState = {
   uploadedFile: UploadedFile;
   script: string;
   scenes: Scene[];
+  scenesSource: ScenesSource;
   transcript: TranscriptLine[];
   renderProgress: Record<string, number>;
   isRendering: boolean;
@@ -150,6 +153,7 @@ type StudioState = {
   setUploadedFile: (file: UploadedFile) => void;
   setScript: (script: string) => void;
   setScenes: (scenes: Scene[]) => void;
+  setScenesSource: (source: ScenesSource) => void;
   updateScene: (id: string, patch: Partial<Scene>) => void;
   setRenderProgress: (id: string, progress: number) => void;
   setIsRendering: (v: boolean) => void;
@@ -163,6 +167,7 @@ const initial = {
   uploadedFile: null as UploadedFile,
   script: "",
   scenes: INITIAL_SCENES,
+  scenesSource: "mock" as ScenesSource,
   transcript: INITIAL_TRANSCRIPT,
   renderProgress: {} as Record<string, number>,
   isRendering: false,
@@ -189,6 +194,8 @@ export const useStudio = create<StudioState>((set, get) => ({
   setScript: (script) => set({ script }),
 
   setScenes: (scenes) => set({ scenes }),
+
+  setScenesSource: (source) => set({ scenesSource: source }),
 
   updateScene: (id, patch) =>
     set((s) => ({

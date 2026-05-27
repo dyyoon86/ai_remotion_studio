@@ -11,6 +11,7 @@ import { ScenePlayer } from "@/components/ScenePlayer";
 import {
   ArrowLeft, ArrowRight, ImageIcon, Sparkles,
   ListMusic, Wand2, RefreshCw, Mic, FileWarning,
+  FileText, AlertTriangle,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 
@@ -43,6 +44,7 @@ function ImageSlot({ image, sceneIndex, onPick }: { image?: string; sceneIndex: 
 
 export function AnalysisStep() {
   const scenes = useStudio((s) => s.scenes);
+  const scenesSource = useStudio((s) => s.scenesSource);
   const updateScene = useStudio((s) => s.updateScene);
   const transcript = useStudio((s) => s.transcript);
   const goNext = useStudio((s) => s.goNext);
@@ -154,6 +156,23 @@ export function AnalysisStep() {
             <p className="text-slate-400 text-[15px]">
               AI가 자동으로 추출한 {scenes.length}개의 씬입니다. 템플릿과 텍스트를 자유롭게 편집하세요.
             </p>
+            <div className="flex items-center gap-2 mt-2">
+              {scenesSource === "segmented" ? (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-mono bg-violet-500/10 text-violet-300 ring-1 ring-violet-500/30">
+                  <Sparkles size={11} />
+                  AI 분할됨 · {scenes.length}씬
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-mono bg-slate-800/60 text-slate-400 ring-1 ring-slate-700/60">
+                  <FileText size={11} />
+                  예시 데이터 · {scenes.length}씬
+                </span>
+              )}
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-mono bg-amber-500/10 text-amber-300 ring-1 ring-amber-500/30">
+                <AlertTriangle size={11} />
+                STT 미구현 · 더미 자막
+              </span>
+            </div>
           </div>
           <Button
             variant="outline"
@@ -304,12 +323,12 @@ export function AnalysisStep() {
             <div className="flex items-center gap-2 mb-1">
               <ListMusic size={15} className="text-violet-400" />
               <h3 className="text-sm font-semibold text-slate-100">전체 자막</h3>
-              <Badge variant="violet" className="ml-auto !text-[9px]">
-                STT
+              <Badge variant="warning" className="ml-auto !text-[9px]">
+                MOCK
               </Badge>
             </div>
             <p className="text-[11px] text-slate-500">
-              총 {transcript.length}개 · 자동 타임스탬프
+              총 {transcript.length}개 · STT 모듈 미구현 (목업)
             </p>
           </div>
 

@@ -26,6 +26,7 @@ export function ScriptStep() {
   const script = useStudio((s) => s.script);
   const setScript = useStudio((s) => s.setScript);
   const setScenes = useStudio((s) => s.setScenes);
+  const setScenesSource = useStudio((s) => s.setScenesSource);
   const goNext = useStudio((s) => s.goNext);
   const goPrev = useStudio((s) => s.goPrev);
   const analyzingScript = useStudio((s) => s.analyzingScript);
@@ -98,6 +99,7 @@ export function ScriptStep() {
       }));
 
       setScenes(newScenes);
+      setScenesSource("segmented");
       goNext();
     } catch (e) {
       setError(
