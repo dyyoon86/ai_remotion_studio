@@ -1,5 +1,6 @@
 import { Composition } from "remotion";
 import { TEMPLATE_COMPONENT } from "./registry";
+import { FullVideo } from "./FullVideo";
 
 // 1920x1080, 30fps, 90 frames (3s)
 const DEFAULT_PROPS = {
@@ -13,6 +14,18 @@ const DEFAULT_NARRATION = "여기에 나레이션 자막이 표시됩니다";
 
 export const RemotionRoot: React.FC = () => (
   <>
+    <Composition
+      id="fullVideo"
+      component={FullVideo}
+      width={1920}
+      height={1080}
+      fps={30}
+      durationInFrames={90}
+      defaultProps={{ scenes: [] }}
+      calculateMetadata={({ props }) => ({
+        durationInFrames: Math.max(1, (props.scenes?.length ?? 0) * 90),
+      })}
+    />
     <Composition
       id="comparison"
       component={TEMPLATE_COMPONENT.comparison}

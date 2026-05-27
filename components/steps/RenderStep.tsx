@@ -7,14 +7,45 @@ import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { ScenePlayer } from "@/components/ScenePlayer";
 import {
-  CheckCircle2, Download, Loader2, PartyPopper,
-  RotateCcw, Film, Clock, Sparkles, Zap,
+  AlertTriangle,
+  CheckCircle2,
+  Clock,
+  Download,
+  Film,
+  Loader2,
+  PartyPopper,
+  RotateCcw,
+  Sparkles,
+  Zap,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { buildSrt } from "@/lib/srt";
+import type { Scene } from "@/lib/store";
 
-const DURATION_MS = 3000; // per scene
-const TICK_MS = 60;
+const PSEUDO_TICK_MS = 400;
+const PSEUDO_CAP = 90;
+
+function startPseudoProgress(
+  scenes: Scene[],
+  setRenderProgress: (id: string, progress: number) => void,
+): ReturnType<typeof setInterval> {
+  // Reset progress for all scenes
+  scenes.forEach((s) => setRenderProgress(s.id, 0));
+  const current: Record<string, number> = {};
+  scenes.forEach((s) => (current[s.id] = 0));
+
+  return setInterval(() => {
+    for (const s of scenes) {
+      const cur = current[s.id] ?? 0;
+      if (cur >= PSEUDO_CAP) continue;
+      // Small random step toward the cap
+      const step = Math.random() * 3 + 0.5;
+      const next = Math.min(PSEUDO_CAP, cur + step);
+      current[s.id] = next;
+      setRenderProgress(s.id, Math.round(next));
+    }
+  }, PSEUDO_TICK_MS);
+}
 
 export function RenderStep() {
   const scenes = useStudio((s) => s.scenes);
@@ -27,52 +58,94 @@ export function RenderStep() {
   const resetAll = useStudio((s) => s.resetAll);
   const setStep = useStudio((s) => s.setStep);
 
-  const [activeIndex, setActiveIndex] = useState<number>(-1);
   const [showToast, setShowToast] = useState(false);
+  const [renderUrl, setRenderUrl] = useState<string | null>(null);
+  const [renderError, setRenderError] = useState<string | null>(null);
   const startedRef = useRef(false);
+  const pseudoTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const realRender = async () => {
+    setIsRendering(true);
+    setRenderComplete(false);
+    setRenderError(null);
+    setRenderUrl(null);
+
+    // Show indeterminate progress while server renders.
+    if (pseudoTimerRef.current) clearInterval(pseudoTimerRef.current);
+    pseudoTimerRef.current = startPseudoProgress(scenes, setRenderProgress);
+
+    try {
+      const res = await fetch("/api/render", {
+        method: "POST",
+        body: JSON.stringify({ scenes }),
+        headers: { "content-type": "application/json" },
+      });
+      if (!res.ok) {
+        const err = await res
+          .json()
+          .catch(() => ({ error: res.statusText } as { error: string }));
+        throw new Error(err.error ?? `HTTP ${res.status}`);
+      }
+      const data = (await res.json()) as { url: string };
+      if (pseudoTimerRef.current) {
+        clearInterval(pseudoTimerRef.current);
+        pseudoTimerRef.current = null;
+      }
+      // Lock all to 100
+      scenes.forEach((s) => setRenderProgress(s.id, 100));
+      setRenderUrl(data.url);
+      setRenderComplete(true);
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 3800);
+    } catch (e) {
+      if (pseudoTimerRef.current) {
+        clearInterval(pseudoTimerRef.current);
+        pseudoTimerRef.current = null;
+      }
+      setRenderError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setIsRendering(false);
+    }
+  };
 
   // Start render automatically when entering this step
   useEffect(() => {
     if (startedRef.current) return;
     if (renderComplete) return;
     startedRef.current = true;
-    startRender();
+    void realRender();
+    return () => {
+      if (pseudoTimerRef.current) {
+        clearInterval(pseudoTimerRef.current);
+        pseudoTimerRef.current = null;
+      }
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const startRender = async () => {
-    setIsRendering(true);
-    setRenderComplete(false);
-
-    for (let i = 0; i < scenes.length; i++) {
-      const sceneId = scenes[i].id;
-      setActiveIndex(i);
-      // Reset for re-renders
-      setRenderProgress(sceneId, 0);
-      await new Promise<void>((resolve) => {
-        const start = Date.now();
-        const interval = setInterval(() => {
-          const elapsed = Date.now() - start;
-          const pct = Math.min(100, Math.round((elapsed / DURATION_MS) * 100));
-          setRenderProgress(sceneId, pct);
-          if (pct >= 100) {
-            clearInterval(interval);
-            resolve();
-          }
-        }, TICK_MS);
-      });
-    }
-
-    setActiveIndex(-1);
-    setIsRendering(false);
-    setRenderComplete(true);
-    setShowToast(true);
-    setTimeout(() => setShowToast(false), 3800);
-  };
-
   const handleReset = () => {
+    if (pseudoTimerRef.current) {
+      clearInterval(pseudoTimerRef.current);
+      pseudoTimerRef.current = null;
+    }
+    startedRef.current = false;
     resetAll();
     setStep(0);
+  };
+
+  const handleRetry = () => {
+    startedRef.current = true;
+    void realRender();
+  };
+
+  const handleDownloadMp4 = () => {
+    if (!renderUrl) return;
+    const a = document.createElement("a");
+    a.href = renderUrl;
+    a.download = "video.mp4";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
   };
 
   const handleDownloadSrt = () => {
@@ -87,10 +160,13 @@ export function RenderStep() {
   };
 
   const totalProgress = Math.round(
-    scenes.reduce((sum, s) => sum + (renderProgress[s.id] ?? 0), 0) / Math.max(1, scenes.length)
+    scenes.reduce((sum, s) => sum + (renderProgress[s.id] ?? 0), 0) /
+      Math.max(1, scenes.length),
   );
 
-  const completedCount = scenes.filter((s) => (renderProgress[s.id] ?? 0) >= 100).length;
+  const completedCount = scenes.filter(
+    (s) => (renderProgress[s.id] ?? 0) >= 100,
+  ).length;
 
   return (
     <div className="px-8 py-10 max-w-5xl mx-auto relative">
@@ -102,8 +178,12 @@ export function RenderStep() {
               <PartyPopper size={18} className="text-emerald-300" />
             </div>
             <div>
-              <div className="text-sm font-semibold text-emerald-100">렌더링 완료!</div>
-              <div className="text-xs text-emerald-300/80">모든 씬이 성공적으로 렌더링되었습니다.</div>
+              <div className="text-sm font-semibold text-emerald-100">
+                렌더링 완료!
+              </div>
+              <div className="text-xs text-emerald-300/80">
+                MP4 와 SRT 모두 다운로드 가능합니다.
+              </div>
             </div>
           </Card>
         </div>
@@ -125,21 +205,54 @@ export function RenderStep() {
         </h1>
         <p className="text-slate-400 text-[15px]">
           {renderComplete
-            ? "모든 씬이 준비되었습니다. 영상을 다운로드하세요."
-            : "각 씬을 순차적으로 인코딩합니다. 잠시만 기다려주세요."}
+            ? "MP4 와 자막(SRT) 모두 다운로드할 수 있습니다."
+            : "Remotion 으로 실제 인코딩 중입니다. 첫 실행은 Chromium 다운로드로 1-2분 소요됩니다."}
         </p>
       </header>
+
+      {/* Error banner */}
+      {renderError && (
+        <Card
+          elevated
+          className="p-5 mb-7 !bg-rose-950/40 !border-rose-500/40"
+        >
+          <div className="flex items-start gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-rose-500/20 text-rose-300 shrink-0">
+              <AlertTriangle size={18} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold text-rose-100 mb-1">
+                렌더링 실패
+              </div>
+              <div className="text-xs text-rose-200/80 font-mono break-all">
+                {renderError}
+              </div>
+            </div>
+            <Button
+              variant="secondary"
+              size="sm"
+              leftIcon={<RotateCcw size={14} />}
+              onClick={handleRetry}
+              disabled={isRendering}
+            >
+              다시 시도
+            </Button>
+          </div>
+        </Card>
+      )}
 
       {/* Overall progress card */}
       <Card elevated className="p-6 mb-7">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
-            <div className={cn(
-              "flex h-10 w-10 items-center justify-center rounded-lg",
-              renderComplete
-                ? "bg-emerald-500/15 text-emerald-300"
-                : "bg-violet-500/15 text-violet-300"
-            )}>
+            <div
+              className={cn(
+                "flex h-10 w-10 items-center justify-center rounded-lg",
+                renderComplete
+                  ? "bg-emerald-500/15 text-emerald-300"
+                  : "bg-violet-500/15 text-violet-300",
+              )}
+            >
               {renderComplete ? (
                 <CheckCircle2 size={20} />
               ) : (
@@ -159,7 +272,15 @@ export function RenderStep() {
           <div className="flex items-center gap-4 text-xs font-mono text-slate-500 nums">
             <div className="flex items-center gap-1.5">
               <Clock size={12} />
-              <span>~{Math.max(0, scenes.length * 3 - Math.round((totalProgress / 100) * scenes.length * 3))}s left</span>
+              <span>
+                ~
+                {Math.max(
+                  0,
+                  scenes.length * 3 -
+                    Math.round((totalProgress / 100) * scenes.length * 3),
+                )}
+                s left
+              </span>
             </div>
             <div className="flex items-center gap-1.5">
               <Zap size={12} className="text-amber-400" />
@@ -175,7 +296,7 @@ export function RenderStep() {
               "absolute inset-y-0 left-0 rounded-full transition-all duration-200",
               renderComplete
                 ? "bg-gradient-to-r from-emerald-500 to-emerald-400"
-                : "bg-gradient-to-r from-violet-600 via-violet-400 to-indigo-400"
+                : "bg-gradient-to-r from-violet-600 via-violet-400 to-indigo-400",
             )}
             style={{ width: `${totalProgress}%` }}
           >
@@ -188,10 +309,10 @@ export function RenderStep() {
 
       {/* Per-scene queue */}
       <div className="space-y-3 mb-10">
-        {scenes.map((scene, i) => {
+        {scenes.map((scene) => {
           const pct = renderProgress[scene.id] ?? 0;
-          const isActive = i === activeIndex;
           const isDone = pct >= 100;
+          const isActive = isRendering && !isDone;
           const isPending = !isActive && !isDone;
 
           return (
@@ -201,7 +322,7 @@ export function RenderStep() {
                 "p-4 transition-all",
                 isActive && "border-violet-500/40 bg-violet-500/[0.03]",
                 isDone && "border-emerald-500/20",
-                isPending && "opacity-60"
+                isPending && "opacity-60",
               )}
             >
               <div className="flex items-center gap-4">
@@ -252,10 +373,13 @@ export function RenderStep() {
                         isDone
                           ? "bg-emerald-500"
                           : isActive
-                          ? "bg-gradient-to-r from-violet-500 to-violet-400"
-                          : "bg-slate-700"
+                            ? "bg-gradient-to-r from-violet-500 to-violet-400"
+                            : "bg-slate-700",
                       )}
-                      style={{ width: `${pct}%`, background: isDone ? scene.accentColor : undefined }}
+                      style={{
+                        width: `${pct}%`,
+                        background: isDone ? scene.accentColor : undefined,
+                      }}
                     >
                       {isActive && <div className="absolute inset-0 shimmer" />}
                     </div>
@@ -283,26 +407,46 @@ export function RenderStep() {
         </Button>
 
         <div className="flex items-center gap-3">
-          {!renderComplete && (
+          {!renderComplete && !renderError && (
             <div className="flex items-center gap-2 text-xs text-slate-500">
               <Sparkles size={13} className="text-violet-400" />
               <span>AI 자동 인코딩 진행 중</span>
             </div>
           )}
           <div className="flex items-center gap-3">
-            <Button
-              variant="primary"
-              size="lg"
-              disabled={!renderComplete || scenes.length === 0}
-              leftIcon={renderComplete ? <Download size={18} /> : <Film size={18} />}
-              className="!px-8"
-              onClick={handleDownloadSrt}
-            >
-              {renderComplete ? "SRT 다운로드" : "렌더링 중..."}
-            </Button>
-            <span className="font-mono text-[10px] text-slate-500">
-              비디오 렌더링은 다음 단계 · 우선 자막 파일만 받기
-            </span>
+            {renderComplete ? (
+              <>
+                <Button
+                  variant="primary"
+                  size="lg"
+                  disabled={!renderUrl}
+                  leftIcon={<Download size={18} />}
+                  className="!px-8"
+                  onClick={handleDownloadMp4}
+                >
+                  MP4 다운로드
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="lg"
+                  disabled={scenes.length === 0}
+                  leftIcon={<Download size={18} />}
+                  onClick={handleDownloadSrt}
+                >
+                  SRT 다운로드
+                </Button>
+              </>
+            ) : (
+              <Button
+                variant="primary"
+                size="lg"
+                disabled
+                leftIcon={<Film size={18} />}
+                className="!px-8"
+              >
+                렌더링 중...
+              </Button>
+            )}
           </div>
         </div>
       </div>
