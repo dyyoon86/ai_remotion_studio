@@ -14,10 +14,11 @@ function buildPrompt(userScript: string): string {
   return `You are a video scriptwriter assistant. Segment the following Korean (or any-language) script into video SCENES.
 
 Rules:
-- One scene = a coherent narrative unit (one topic, one moment, one idea). Usually ~1–4 sentences of narration.
-- Aim for 3–8 scenes total for a typical script. More if the script is long.
-- For each scene produce: a SHORT 3–12 char Korean title (descriptive, not generic), and the narration text (verbatim from the script, you may lightly join split lines but DO NOT paraphrase or invent content).
-- If the script uses [section] or [헤더] markers, respect them as scene boundaries.
+- One scene = one narrative beat. Each sentence or short paragraph is usually its own scene.
+- HARD MINIMUM: if the script contains 3 or more standalone sentences (separated by periods, question marks, exclamation marks, or line breaks), produce AT LEAST 3 scenes. Never collapse a multi-sentence script into a single scene.
+- Aim for 4–8 scenes for a typical script. Lean toward MORE scenes, not fewer.
+- For each scene produce: a SHORT 3–12 char Korean title (descriptive of THAT scene only, not generic), and the narration text (verbatim from the script, lightly joined if a sentence was split across lines; DO NOT paraphrase or invent).
+- If the script uses [section] or [헤더] markers, respect them as scene boundaries, but additionally split LONG sections further if they have multiple sentences.
 - Output STRICT JSON only, no prose, no code fences:
 
 {"scenes":[{"title":"...","narration":"..."}, ...]}
@@ -116,6 +117,18 @@ export async function POST(request: Request) {
       },
       { status: 500 },
     );
+  }
+
+  // Defensive logging: warn when the model under-segments a multi-sentence script
+  if (scenes.length === 1) {
+    const sentenceCount = (script.match(/[.!?。\n]+/g) ?? [])
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0).length;
+    if (sentenceCount >= 3) {
+      console.warn(
+        `[segment-script] Model returned only 1 scene for a script containing ${sentenceCount} sentence boundaries. Consider revising the prompt or input.`,
+      );
+    }
   }
 
   return NextResponse.json({ scenes });

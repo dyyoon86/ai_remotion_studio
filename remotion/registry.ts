@@ -34,6 +34,7 @@ import { LogoCloneTemplate } from "./LogoCloneTemplate";
 import { LogoMetricsTemplate } from "./LogoMetricsTemplate";
 import { KineticCompactTemplate } from "./KineticCompactTemplate";
 import { ComparisonV2Template } from "./ComparisonV2Template";
+import { withSubtitle } from "./withSubtitle";
 import type { Scene, TemplateId } from "@/lib/store";
 
 type Comp = React.FC<{
@@ -44,45 +45,46 @@ type Comp = React.FC<{
   productB?: string;
   imageUrl?: string;
   image?: string;
+  narration?: string;
 }>;
 
 export const TEMPLATE_COMPONENT: Record<TemplateId, Comp> = {
-  comparison: ComparisonTemplate as Comp,
-  intro: IntroTemplate as Comp,
-  highlight: TextHighlightTemplate as Comp,
-  imagecard: ImageCardTemplate as Comp,
-  flowSteps: FlowStepsTemplate as Comp,
-  keywordImpact: KeywordImpactTemplate as Comp,
-  gridCard: GridCardTemplate as Comp,
-  numberList: NumberListTemplate as Comp,
-  layerStack: LayerStackTemplate as Comp,
-  bidirectional: BidirectionalTemplate as Comp,
-  chatInterface: ChatInterfaceTemplate as Comp,
-  phoneChat: PhoneChatTemplate as Comp,
-  gaugeMeter: GaugeMeterTemplate as Comp,
-  treeExplorer: TreeExplorerTemplate as Comp,
-  multiPanelDash: MultiPanelDashTemplate as Comp,
-  premiumIntro: PremiumIntroTemplate as Comp,
-  floatingCard3D: FloatingCard3DTemplate as Comp,
-  premiumMetric: PremiumMetricTemplate as Comp,
-  gridExplosion: GridExplosionTemplate as Comp,
-  kineticTypo: KineticTypoTemplate as Comp,
-  redditStory: RedditStoryTemplate as Comp,
-  imageEmphasis: ImageEmphasisTemplate as Comp,
-  imageEmphasisV2: ImageEmphasisV2Template as Comp,
-  logoBrand: LogoBrandTemplate as Comp,
-  premiumFunnel: PremiumFunnelTemplate as Comp,
-  strategicBlueprint: StrategicBlueprintTemplate as Comp,
-  orbitTimeline: OrbitTimelineTemplate as Comp,
-  logicFlow: LogicFlowTemplate as Comp,
-  hologramCore: HologramCoreTemplate as Comp,
-  cinematicMatrix: CinematicMatrixTemplate as Comp,
-  quantumSingularity: QuantumSingularityTemplate as Comp,
-  logoDualSnap: LogoDualSnapTemplate as Comp,
-  logoClone: LogoCloneTemplate as Comp,
-  logoMetrics: LogoMetricsTemplate as Comp,
-  kineticCompact: KineticCompactTemplate as Comp,
-  comparisonV2: ComparisonV2Template as Comp,
+  comparison: withSubtitle(ComparisonTemplate as Comp) as Comp,
+  intro: withSubtitle(IntroTemplate as Comp) as Comp,
+  highlight: withSubtitle(TextHighlightTemplate as Comp) as Comp,
+  imagecard: withSubtitle(ImageCardTemplate as Comp) as Comp,
+  flowSteps: withSubtitle(FlowStepsTemplate as Comp) as Comp,
+  keywordImpact: withSubtitle(KeywordImpactTemplate as Comp) as Comp,
+  gridCard: withSubtitle(GridCardTemplate as Comp) as Comp,
+  numberList: withSubtitle(NumberListTemplate as Comp) as Comp,
+  layerStack: withSubtitle(LayerStackTemplate as Comp) as Comp,
+  bidirectional: withSubtitle(BidirectionalTemplate as Comp) as Comp,
+  chatInterface: withSubtitle(ChatInterfaceTemplate as Comp) as Comp,
+  phoneChat: withSubtitle(PhoneChatTemplate as Comp) as Comp,
+  gaugeMeter: withSubtitle(GaugeMeterTemplate as Comp) as Comp,
+  treeExplorer: withSubtitle(TreeExplorerTemplate as Comp) as Comp,
+  multiPanelDash: withSubtitle(MultiPanelDashTemplate as Comp) as Comp,
+  premiumIntro: withSubtitle(PremiumIntroTemplate as Comp) as Comp,
+  floatingCard3D: withSubtitle(FloatingCard3DTemplate as Comp) as Comp,
+  premiumMetric: withSubtitle(PremiumMetricTemplate as Comp) as Comp,
+  gridExplosion: withSubtitle(GridExplosionTemplate as Comp) as Comp,
+  kineticTypo: withSubtitle(KineticTypoTemplate as Comp) as Comp,
+  redditStory: withSubtitle(RedditStoryTemplate as Comp) as Comp,
+  imageEmphasis: withSubtitle(ImageEmphasisTemplate as Comp) as Comp,
+  imageEmphasisV2: withSubtitle(ImageEmphasisV2Template as Comp) as Comp,
+  logoBrand: withSubtitle(LogoBrandTemplate as Comp) as Comp,
+  premiumFunnel: withSubtitle(PremiumFunnelTemplate as Comp) as Comp,
+  strategicBlueprint: withSubtitle(StrategicBlueprintTemplate as Comp) as Comp,
+  orbitTimeline: withSubtitle(OrbitTimelineTemplate as Comp) as Comp,
+  logicFlow: withSubtitle(LogicFlowTemplate as Comp) as Comp,
+  hologramCore: withSubtitle(HologramCoreTemplate as Comp) as Comp,
+  cinematicMatrix: withSubtitle(CinematicMatrixTemplate as Comp) as Comp,
+  quantumSingularity: withSubtitle(QuantumSingularityTemplate as Comp) as Comp,
+  logoDualSnap: withSubtitle(LogoDualSnapTemplate as Comp) as Comp,
+  logoClone: withSubtitle(LogoCloneTemplate as Comp) as Comp,
+  logoMetrics: withSubtitle(LogoMetricsTemplate as Comp) as Comp,
+  kineticCompact: withSubtitle(KineticCompactTemplate as Comp) as Comp,
+  comparisonV2: withSubtitle(ComparisonV2Template as Comp) as Comp,
 };
 
 export function buildInputProps(scene: Scene) {
@@ -90,6 +92,7 @@ export function buildInputProps(scene: Scene) {
     title: scene.titleMeta || scene.title,
     subtitle: scene.subtitleMeta,
     accent: scene.accentColor,
+    narration: scene.narration,
   };
   if (scene.template === "comparison") {
     // Split narration heuristically for two-column comparison

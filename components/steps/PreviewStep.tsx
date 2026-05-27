@@ -9,15 +9,27 @@ import { Badge } from "@/components/ui/Badge";
 import { ScenePlayer } from "@/components/ScenePlayer";
 import {
   ArrowLeft, Play, Type, AlignLeft, Palette,
-  Image as ImageIcon, Tag, FilmIcon, MessageSquare,
+  Image as ImageIcon, Tag, FilmIcon, MessageSquare, Download,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { buildSrt } from "@/lib/srt";
 
 export function PreviewStep() {
   const scenes = useStudio((s) => s.scenes);
   const updateScene = useStudio((s) => s.updateScene);
   const goNext = useStudio((s) => s.goNext);
   const goPrev = useStudio((s) => s.goPrev);
+
+  const handleDownloadSrt = () => {
+    const text = buildSrt(scenes);
+    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "subtitle.srt";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="px-8 py-8">
@@ -41,6 +53,15 @@ export function PreviewStep() {
             <div className="px-3 py-1.5 rounded-md bg-slate-900/60 border border-slate-800/60">
               ~{(scenes.length * 3).toFixed(0)}s total
             </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              leftIcon={<Download size={13} />}
+              onClick={handleDownloadSrt}
+              disabled={scenes.length === 0}
+            >
+              SRT 다운로드
+            </Button>
           </div>
         </div>
       </header>

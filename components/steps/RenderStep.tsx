@@ -11,6 +11,7 @@ import {
   RotateCcw, Film, Clock, Sparkles, Zap,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { buildSrt } from "@/lib/srt";
 
 const DURATION_MS = 3000; // per scene
 const TICK_MS = 60;
@@ -72,6 +73,17 @@ export function RenderStep() {
   const handleReset = () => {
     resetAll();
     setStep(0);
+  };
+
+  const handleDownloadSrt = () => {
+    const text = buildSrt(scenes);
+    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "subtitle.srt";
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const totalProgress = Math.round(
@@ -277,19 +289,21 @@ export function RenderStep() {
               <span>AI 자동 인코딩 진행 중</span>
             </div>
           )}
-          <Button
-            variant="primary"
-            size="lg"
-            disabled={!renderComplete}
-            leftIcon={renderComplete ? <Download size={18} /> : <Film size={18} />}
-            className="!px-8"
-            onClick={() => {
-              // Mock download
-              alert("📥 final_render.mp4 (다운로드는 모의 동작입니다)");
-            }}
-          >
-            {renderComplete ? "다운로드" : "렌더링 중..."}
-          </Button>
+          <div className="flex items-center gap-3">
+            <Button
+              variant="primary"
+              size="lg"
+              disabled={!renderComplete || scenes.length === 0}
+              leftIcon={renderComplete ? <Download size={18} /> : <Film size={18} />}
+              className="!px-8"
+              onClick={handleDownloadSrt}
+            >
+              {renderComplete ? "SRT 다운로드" : "렌더링 중..."}
+            </Button>
+            <span className="font-mono text-[10px] text-slate-500">
+              비디오 렌더링은 다음 단계 · 우선 자막 파일만 받기
+            </span>
+          </div>
         </div>
       </div>
     </div>
