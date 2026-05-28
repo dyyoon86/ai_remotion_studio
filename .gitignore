@@ -24,6 +24,7 @@
 .DS_Store
 *.pem
 /public/uploads/
+/public/uploads/tts/
 /public/renders/
 
 # debug

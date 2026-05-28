@@ -100,6 +100,10 @@ export type Scene = {
   subtitleMeta: string;
   accentColor: string;
   templateCandidates?: TemplateCandidate[];
+  /** Variable scene duration in frames (at 30fps). When undefined, default 90. */
+  durationFrames?: number;
+  /** TTS-generated audio URL like "/uploads/tts/<id>.mp3". */
+  audioUrl?: string;
 };
 
 export type TranscriptLine = {

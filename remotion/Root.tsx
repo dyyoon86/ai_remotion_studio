@@ -23,7 +23,17 @@ export const RemotionRoot: React.FC = () => (
       durationInFrames={90}
       defaultProps={{ scenes: [] }}
       calculateMetadata={({ props }) => ({
-        durationInFrames: Math.max(1, (props.scenes?.length ?? 0) * 90),
+        durationInFrames: Math.max(
+          1,
+          (props.scenes ?? []).reduce(
+            (acc, s) =>
+              acc +
+              (s.durationFrames && s.durationFrames > 0
+                ? s.durationFrames
+                : 90),
+            0,
+          ),
+        ),
       })}
     />
     <Composition

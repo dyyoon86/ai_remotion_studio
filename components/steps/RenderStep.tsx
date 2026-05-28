@@ -13,6 +13,7 @@ import {
   Download,
   Film,
   Loader2,
+  Mic,
   PartyPopper,
   RotateCcw,
   Sparkles,
@@ -24,6 +25,26 @@ import type { Scene } from "@/lib/store";
 
 const PSEUDO_TICK_MS = 400;
 const PSEUDO_CAP = 90;
+
+type RenderPhase = null | "tts" | "render";
+
+type VoiceOption = { id: string; label: string };
+const VOICE_OPTIONS: VoiceOption[] = [
+  { id: "ko-KR-SunHiNeural", label: "한국어 여성 (SunHi)" },
+  { id: "ko-KR-InJoonNeural", label: "한국어 남성 (InJoon)" },
+  { id: "en-US-AriaNeural", label: "영문 여성 (Aria)" },
+  { id: "en-US-GuyNeural", label: "영문 남성 (Guy)" },
+];
+const DEFAULT_VOICE = VOICE_OPTIONS[0].id;
+
+type TtsResponse = {
+  tts: {
+    sceneId: string;
+    audioUrl: string;
+    durationSeconds: number;
+    durationFrames: number;
+  }[];
+};
 
 function startPseudoProgress(
   scenes: Scene[],
@@ -55,29 +76,78 @@ export function RenderStep() {
   const setIsRendering = useStudio((s) => s.setIsRendering);
   const renderComplete = useStudio((s) => s.renderComplete);
   const setRenderComplete = useStudio((s) => s.setRenderComplete);
+  const updateScene = useStudio((s) => s.updateScene);
   const resetAll = useStudio((s) => s.resetAll);
   const setStep = useStudio((s) => s.setStep);
 
   const [showToast, setShowToast] = useState(false);
   const [renderUrl, setRenderUrl] = useState<string | null>(null);
   const [renderError, setRenderError] = useState<string | null>(null);
+  const [renderPhase, setRenderPhase] = useState<RenderPhase>(null);
+  const [voice, setVoice] = useState<string>(DEFAULT_VOICE);
   const startedRef = useRef(false);
   const pseudoTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const voiceRef = useRef(voice);
+  voiceRef.current = voice;
 
   const realRender = async () => {
     setIsRendering(true);
     setRenderComplete(false);
     setRenderError(null);
     setRenderUrl(null);
+    setRenderPhase("tts");
 
-    // Show indeterminate progress while server renders.
+    // Show indeterminate progress while server works.
     if (pseudoTimerRef.current) clearInterval(pseudoTimerRef.current);
     pseudoTimerRef.current = startPseudoProgress(scenes, setRenderProgress);
 
     try {
+      // Phase 1: TTS for each scene with non-empty narration.
+      const sceneInputs = scenes
+        .filter((s) => s.narration && s.narration.trim())
+        .map((s) => ({ id: s.id, narration: s.narration }));
+
+      if (sceneInputs.length > 0) {
+        try {
+          const ttsRes = await fetch("/api/tts", {
+            method: "POST",
+            body: JSON.stringify({
+              scenes: sceneInputs,
+              voice: voiceRef.current,
+            }),
+            headers: { "content-type": "application/json" },
+          });
+          if (ttsRes.ok) {
+            const data = (await ttsRes.json()) as TtsResponse;
+            for (const t of data.tts) {
+              updateScene(t.sceneId, {
+                audioUrl: t.audioUrl,
+                durationFrames: t.durationFrames,
+              });
+            }
+          } else {
+            const err = await ttsRes
+              .json()
+              .catch(() => ({ error: ttsRes.statusText } as { error: string }));
+            console.warn(
+              "[render] TTS step failed; continuing with default 3s scenes:",
+              err.error,
+            );
+          }
+        } catch (e) {
+          console.warn(
+            "[render] TTS step threw; continuing with default 3s scenes:",
+            e,
+          );
+        }
+      }
+
+      // Phase 2: render — read the LATEST scenes from store after TTS updates.
+      setRenderPhase("render");
+      const latestScenes = useStudio.getState().scenes;
       const res = await fetch("/api/render", {
         method: "POST",
-        body: JSON.stringify({ scenes }),
+        body: JSON.stringify({ scenes: latestScenes }),
         headers: { "content-type": "application/json" },
       });
       if (!res.ok) {
@@ -87,12 +157,13 @@ export function RenderStep() {
         throw new Error(err.error ?? `HTTP ${res.status}`);
       }
       const data = (await res.json()) as { url: string };
+
       if (pseudoTimerRef.current) {
         clearInterval(pseudoTimerRef.current);
         pseudoTimerRef.current = null;
       }
       // Lock all to 100
-      scenes.forEach((s) => setRenderProgress(s.id, 100));
+      latestScenes.forEach((s) => setRenderProgress(s.id, 100));
       setRenderUrl(data.url);
       setRenderComplete(true);
       setShowToast(true);
@@ -105,6 +176,7 @@ export function RenderStep() {
       setRenderError(e instanceof Error ? e.message : String(e));
     } finally {
       setIsRendering(false);
+      setRenderPhase(null);
     }
   };
 
@@ -168,6 +240,14 @@ export function RenderStep() {
     (s) => (renderProgress[s.id] ?? 0) >= 100,
   ).length;
 
+  const headlineCopy = renderComplete
+    ? "MP4 와 자막(SRT) 모두 다운로드할 수 있습니다."
+    : renderPhase === "tts"
+      ? "edge-tts 로 씬별 음성을 생성하는 중입니다."
+      : renderPhase === "render"
+        ? "Remotion 으로 인코딩 + 오디오 믹스 진행 중입니다."
+        : "Remotion 으로 실제 인코딩 중입니다. 첫 실행은 Chromium 다운로드로 1-2분 소요됩니다.";
+
   return (
     <div className="px-8 py-10 max-w-5xl mx-auto relative">
       {/* Success toast */}
@@ -189,25 +269,54 @@ export function RenderStep() {
         </div>
       )}
 
-      <header className="mb-8">
-        <Badge variant="violet" className="mb-3">
-          Step 05 · Render
-        </Badge>
-        <h1 className="text-3xl font-bold tracking-tight text-slate-100 mb-2">
-          {renderComplete ? (
-            <span>
-              <span className="text-gradient-violet">렌더링 완료</span>{" "}
-              <span className="inline-block">🎬</span>
-            </span>
-          ) : (
-            "씬 렌더링 중..."
-          )}
-        </h1>
-        <p className="text-slate-400 text-[15px]">
-          {renderComplete
-            ? "MP4 와 자막(SRT) 모두 다운로드할 수 있습니다."
-            : "Remotion 으로 실제 인코딩 중입니다. 첫 실행은 Chromium 다운로드로 1-2분 소요됩니다."}
-        </p>
+      <header className="mb-8 flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <Badge variant="violet" className="mb-3">
+            Step 05 · Render
+          </Badge>
+          <h1 className="text-3xl font-bold tracking-tight text-slate-100 mb-2">
+            {renderComplete ? (
+              <span>
+                <span className="text-gradient-violet">렌더링 완료</span>{" "}
+                <span className="inline-block">🎬</span>
+              </span>
+            ) : renderPhase === "tts" ? (
+              "음성 생성 중..."
+            ) : (
+              "씬 렌더링 중..."
+            )}
+          </h1>
+          <p className="text-slate-400 text-[15px]">{headlineCopy}</p>
+        </div>
+
+        {/* Voice selector */}
+        <div className="shrink-0 flex flex-col items-end gap-1">
+          <label className="text-[11px] uppercase tracking-wider text-slate-500">
+            음성
+          </label>
+          <div className="relative">
+            <select
+              value={voice}
+              onChange={(e) => setVoice(e.target.value)}
+              disabled={isRendering}
+              className={cn(
+                "appearance-none rounded-md border border-slate-700 bg-slate-900/60 px-3 py-1.5 pr-7 text-sm text-slate-200",
+                "focus:outline-none focus:ring-1 focus:ring-violet-500 focus:border-violet-500",
+                isRendering && "opacity-50 cursor-not-allowed",
+              )}
+            >
+              {VOICE_OPTIONS.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.label}
+                </option>
+              ))}
+            </select>
+            <Mic
+              size={12}
+              className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-500"
+            />
+          </div>
+        </div>
       </header>
 
       {/* Error banner */}
@@ -261,7 +370,11 @@ export function RenderStep() {
             </div>
             <div>
               <div className="text-sm font-semibold text-slate-100">
-                {renderComplete ? "All Done" : "Encoding"}
+                {renderComplete
+                  ? "All Done"
+                  : renderPhase === "tts"
+                    ? "Synthesizing"
+                    : "Encoding"}
               </div>
               <div className="text-xs text-slate-500 nums">
                 {completedCount} / {scenes.length} 씬 · {totalProgress}%
@@ -314,6 +427,7 @@ export function RenderStep() {
           const isDone = pct >= 100;
           const isActive = isRendering && !isDone;
           const isPending = !isActive && !isDone;
+          const isTtsPhase = renderPhase === "tts";
 
           return (
             <Card
@@ -352,7 +466,13 @@ export function RenderStep() {
                         완료
                       </Badge>
                     )}
-                    {isActive && (
+                    {isActive && isTtsPhase && (
+                      <Badge variant="violet" className="!text-[9px]">
+                        <Mic size={9} />
+                        음성
+                      </Badge>
+                    )}
+                    {isActive && !isTtsPhase && (
                       <Badge variant="violet" className="!text-[9px]">
                         <Loader2 size={9} className="animate-spin" />
                         인코딩
@@ -410,7 +530,11 @@ export function RenderStep() {
           {!renderComplete && !renderError && (
             <div className="flex items-center gap-2 text-xs text-slate-500">
               <Sparkles size={13} className="text-violet-400" />
-              <span>AI 자동 인코딩 진행 중</span>
+              <span>
+                {renderPhase === "tts"
+                  ? "AI 음성 생성 진행 중"
+                  : "AI 자동 인코딩 진행 중"}
+              </span>
             </div>
           )}
           <div className="flex items-center gap-3">
@@ -444,7 +568,7 @@ export function RenderStep() {
                 leftIcon={<Film size={18} />}
                 className="!px-8"
               >
-                렌더링 중...
+                {renderPhase === "tts" ? "음성 생성 중..." : "렌더링 중..."}
               </Button>
             )}
           </div>

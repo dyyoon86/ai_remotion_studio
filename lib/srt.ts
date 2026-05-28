@@ -1,6 +1,7 @@
 import type { Scene } from "./store";
 
-const SCENE_SECONDS = 3;
+const FPS = 30;
+const DEFAULT_FRAMES = 90;
 
 function fmt(seconds: number): string {
   const h = Math.floor(seconds / 3600);
@@ -12,12 +13,18 @@ function fmt(seconds: number): string {
 }
 
 export function buildSrt(
-  scenes: Pick<Scene, "id" | "index" | "narration">[],
+  scenes: Pick<Scene, "id" | "index" | "narration" | "durationFrames">[],
 ): string {
+  let cursorFrames = 0;
   return scenes
     .map((s, i) => {
-      const start = i * SCENE_SECONDS;
-      const end = start + SCENE_SECONDS;
+      const frames =
+        s.durationFrames && s.durationFrames > 0
+          ? s.durationFrames
+          : DEFAULT_FRAMES;
+      const start = cursorFrames / FPS;
+      const end = (cursorFrames + frames) / FPS;
+      cursorFrames += frames;
       return `${i + 1}\n${fmt(start)} --> ${fmt(end)}\n${s.narration.trim()}\n`;
     })
     .join("\n");

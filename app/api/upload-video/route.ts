@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
-import { FFMPEG_PATH } from "@/lib/ffmpeg";
+import { FFMPEG_PATH, parseFfmpegDuration } from "@/lib/ffmpeg";
 
 const ALLOWED_EXTS = new Set([".mp4", ".mov", ".webm", ".mkv", ".m4v"]);
 const MAX_BYTES = 200 * 1024 * 1024; // 200 MB
@@ -31,16 +31,6 @@ function runFfmpeg(args: string[]): Promise<SpawnResult> {
     child.on("error", (err) => reject(err));
     child.on("close", (code) => resolve({ code, stdout, stderr }));
   });
-}
-
-export function parseFfmpegDuration(stderr: string): number | null {
-  const m = stderr.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/);
-  if (!m) return null;
-  const h = parseInt(m[1], 10);
-  const min = parseInt(m[2], 10);
-  const s = parseFloat(m[3]);
-  if (Number.isNaN(h) || Number.isNaN(min) || Number.isNaN(s)) return null;
-  return h * 3600 + min * 60 + s;
 }
 
 function formatDurationDisplay(totalSeconds: number): string {
