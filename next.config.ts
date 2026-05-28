@@ -13,6 +13,18 @@ const nextConfig: NextConfig = {
       { protocol: "https", hostname: "picsum.photos" },
     ],
   },
+  // Keep heavy server-only packages out of Turbopack's module graph.
+  // @remotion/bundler pulls in esbuild + README.md files that Turbopack
+  // can't parse, and @remotion/renderer spawns native chromium/encoders.
+  serverExternalPackages: [
+    "@remotion/bundler",
+    "@remotion/renderer",
+    "@remotion/compositor-win32-x64-msvc",
+    "@remotion/compositor-linux-x64-gnu",
+    "@remotion/compositor-darwin-x64",
+    "@remotion/compositor-darwin-arm64",
+    "esbuild",
+  ],
 };
 
 export default nextConfig;
