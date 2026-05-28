@@ -164,6 +164,8 @@ type StudioState = {
   isRendering: boolean;
   renderComplete: boolean;
   analyzingScript: boolean;
+  /** When true, /api/render mixes original uploaded video audio under TTS at 0.25 volume. */
+  mixOriginalAudio: boolean;
 
   // Project state (Phase 5)
   projects: Project[];
@@ -177,6 +179,10 @@ type StudioState = {
   setScenes: (scenes: Scene[]) => void;
   setScenesSource: (source: ScenesSource) => void;
   updateScene: (id: string, patch: Partial<Scene>) => void;
+  /** Phase 6 — scene CRUD. */
+  addScene: (after?: number) => string;
+  removeScene: (id: string) => void;
+  reorderScenes: (ids: string[]) => void;
   setTranscript: (t: TranscriptLine[]) => void;
   setDerivedTranscript: (t: TranscriptLine[]) => void;
   setTranscribing: (v: boolean) => void;
@@ -184,6 +190,7 @@ type StudioState = {
   setIsRendering: (v: boolean) => void;
   setRenderComplete: (v: boolean) => void;
   setAnalyzingScript: (v: boolean) => void;
+  setMixOriginalAudio: (v: boolean) => void;
   resetAll: () => void;
 
   // Project actions (Phase 5)
@@ -208,6 +215,7 @@ const initial = {
   isRendering: false,
   renderComplete: false,
   analyzingScript: false,
+  mixOriginalAudio: false,
 };
 
 function buildDefaultSnapshot(): ProjectSnapshot {
@@ -219,6 +227,7 @@ function buildDefaultSnapshot(): ProjectSnapshot {
     scenesSource: "mock",
     transcriptSource: "mock",
     currentStep: 0,
+    mixOriginalAudio: false,
   };
 }
 
@@ -231,6 +240,7 @@ function buildEmptySnapshot(): ProjectSnapshot {
     scenesSource: "manual",
     transcriptSource: "derived",
     currentStep: 0,
+    mixOriginalAudio: false,
   };
 }
 
@@ -243,6 +253,7 @@ function snapshotFromState(s: StudioState): ProjectSnapshot {
     scenesSource: s.scenesSource,
     transcriptSource: s.transcriptSource,
     currentStep: s.currentStep,
+    mixOriginalAudio: s.mixOriginalAudio,
   };
 }
 
@@ -255,6 +266,8 @@ function stateFromSnapshot(snap: ProjectSnapshot): Partial<StudioState> {
     scenesSource: snap.scenesSource,
     transcriptSource: snap.transcriptSource,
     currentStep: snap.currentStep,
+    // Legacy snapshots may not have this field — default to false.
+    mixOriginalAudio: snap.mixOriginalAudio ?? false,
   };
 }
 
@@ -287,6 +300,77 @@ export const useStudio = create<StudioState>((set, get) => ({
       scenes: s.scenes.map((sc) => (sc.id === id ? { ...sc, ...patch } : sc)),
     })),
 
+  addScene: (after) => {
+    const newId =
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `scene-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    set((s) => {
+      const current = s.scenes;
+      // Determine insertion position (0-based index in the array).
+      const insertAt =
+        typeof after === "number" && after >= 0 && after <= current.length
+          ? after
+          : current.length;
+      const accent =
+        ACCENT_PRESETS[insertAt % ACCENT_PRESETS.length] ?? ACCENT_PRESETS[0];
+      const fresh: Scene = {
+        id: newId,
+        index: insertAt + 1, // will be recomputed below
+        title: "새 씬",
+        narration: "",
+        template: "intro",
+        titleMeta: "새 씬",
+        subtitleMeta: "",
+        accentColor: accent,
+        image: undefined,
+        templateCandidates: undefined,
+        durationFrames: undefined,
+        audioUrl: undefined,
+      };
+      const next = [
+        ...current.slice(0, insertAt),
+        fresh,
+        ...current.slice(insertAt),
+      ].map((sc, i) => ({ ...sc, index: i + 1 }));
+      return { scenes: next };
+    });
+    return newId;
+  },
+
+  removeScene: (id) =>
+    set((s) => ({
+      scenes: s.scenes
+        .filter((sc) => sc.id !== id)
+        .map((sc, i) => ({ ...sc, index: i + 1 })),
+    })),
+
+  reorderScenes: (ids) =>
+    set((s) => {
+      const byId = new Map(s.scenes.map((sc) => [sc.id, sc] as const));
+      const seen = new Set<string>();
+      const ordered: Scene[] = [];
+      // First: take ids in the requested order, ignoring duplicates and unknowns.
+      for (const id of ids) {
+        if (seen.has(id)) continue;
+        const sc = byId.get(id);
+        if (!sc) continue;
+        ordered.push(sc);
+        seen.add(id);
+      }
+      // Then: append any current scenes not in the ids array, preserving their
+      // existing relative order (so no scene is lost).
+      for (const sc of s.scenes) {
+        if (!seen.has(sc.id)) {
+          ordered.push(sc);
+          seen.add(sc.id);
+        }
+      }
+      return {
+        scenes: ordered.map((sc, i) => ({ ...sc, index: i + 1 })),
+      };
+    }),
+
   setTranscript: (t) => set({ transcript: t, transcriptSource: "stt" }),
 
   setDerivedTranscript: (t) => set({ transcript: t, transcriptSource: "derived" }),
@@ -301,6 +385,8 @@ export const useStudio = create<StudioState>((set, get) => ({
   setRenderComplete: (v) => set({ renderComplete: v }),
 
   setAnalyzingScript: (v) => set({ analyzingScript: v }),
+
+  setMixOriginalAudio: (v) => set({ mixOriginalAudio: v }),
 
   resetAll: () => {
     set({

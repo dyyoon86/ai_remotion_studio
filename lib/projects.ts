@@ -14,6 +14,8 @@ export type ProjectSnapshot = {
   scenesSource: ScenesSource;
   transcriptSource: TranscriptSource;
   currentStep: number;
+  /** Whether to mix the original uploaded video's audio under the TTS track. */
+  mixOriginalAudio?: boolean;
 };
 
 export type Project = {

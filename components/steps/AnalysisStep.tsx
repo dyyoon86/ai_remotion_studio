@@ -12,6 +12,7 @@ import {
   ArrowLeft, ArrowRight, ImageIcon, Sparkles,
   ListMusic, Wand2, RefreshCw, Mic, FileWarning,
   FileText, AlertTriangle, CheckCircle2, Loader2,
+  Plus, X, ChevronUp, ChevronDown,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 
@@ -46,6 +47,9 @@ export function AnalysisStep() {
   const scenes = useStudio((s) => s.scenes);
   const scenesSource = useStudio((s) => s.scenesSource);
   const updateScene = useStudio((s) => s.updateScene);
+  const addScene = useStudio((s) => s.addScene);
+  const removeScene = useStudio((s) => s.removeScene);
+  const reorderScenes = useStudio((s) => s.reorderScenes);
   const transcript = useStudio((s) => s.transcript);
   const transcriptSource = useStudio((s) => s.transcriptSource);
   const transcribing = useStudio((s) => s.transcribing);
@@ -62,6 +66,36 @@ export function AnalysisStep() {
 
   const templateLabelById = (id: TemplateId): string =>
     TEMPLATE_OPTIONS.find((t) => t.id === id)?.label ?? id;
+
+  const handleDeleteScene = (sceneId: string) => {
+    if (scenes.length <= 1) return;
+    if (typeof window !== "undefined" && !window.confirm("이 씬을 삭제할까요?")) {
+      return;
+    }
+    removeScene(sceneId);
+  };
+
+  const handleMoveUp = (idx: number) => {
+    if (idx <= 0) return;
+    const ids = scenes.map((s) => s.id);
+    [ids[idx - 1], ids[idx]] = [ids[idx], ids[idx - 1]];
+    reorderScenes(ids);
+  };
+
+  const handleMoveDown = (idx: number) => {
+    if (idx >= scenes.length - 1) return;
+    const ids = scenes.map((s) => s.id);
+    [ids[idx], ids[idx + 1]] = [ids[idx + 1], ids[idx]];
+    reorderScenes(ids);
+  };
+
+  const handleInsertAt = (insertAt: number) => {
+    addScene(insertAt);
+  };
+
+  const handleAppendScene = () => {
+    addScene();
+  };
 
   const reAnalyze = async () => {
     setAnalyzing(true);
@@ -302,13 +336,63 @@ export function AnalysisStep() {
           )}
           <div className="space-y-4 max-w-[1100px]">
             {scenes.map((scene, idx) => (
+              <div key={scene.id}>
+                {/* Insertion bar (revealed on hover) — above each card */}
+                <button
+                  type="button"
+                  onClick={() => handleInsertAt(idx)}
+                  className={cn(
+                    "group/insert relative w-full -my-1.5 flex items-center justify-center gap-1.5",
+                    "h-3 hover:h-7 transition-all duration-150",
+                    "text-[10px] font-mono uppercase tracking-[0.16em]",
+                    "text-transparent hover:text-violet-300",
+                  )}
+                  aria-label={`${idx + 1}번째 위치에 씬 추가`}
+                >
+                  <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-px bg-transparent group-hover/insert:bg-violet-500/40 transition-colors" />
+                  <span className="relative z-10 inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-950/80 ring-1 ring-transparent group-hover/insert:ring-violet-500/40 transition-all">
+                    <Plus size={10} />
+                    이 위치에 씬 추가
+                  </span>
+                </button>
+
               <Card
-                key={scene.id}
-                className="p-5 hover:border-violet-500/30 transition-colors group"
+                className="p-5 hover:border-violet-500/30 transition-colors group relative"
               >
+                {/* Delete button (top-right) */}
+                <button
+                  type="button"
+                  onClick={() => handleDeleteScene(scene.id)}
+                  disabled={scenes.length <= 1}
+                  className={cn(
+                    "absolute top-2.5 right-2.5 z-10 inline-flex h-6 w-6 items-center justify-center rounded-md",
+                    "text-slate-500 hover:text-violet-300 hover:bg-slate-800/70",
+                    "transition-colors",
+                    "disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:text-slate-500 disabled:hover:bg-transparent",
+                  )}
+                  aria-label="씬 삭제"
+                  title={scenes.length <= 1 ? "최소 1개의 씬이 필요합니다" : "씬 삭제"}
+                >
+                  <X size={13} />
+                </button>
+
                 <div className="flex items-stretch gap-4">
-                  {/* Index badge */}
-                  <div className="shrink-0 flex flex-col items-center gap-2">
+                  {/* Index badge + reorder chevrons */}
+                  <div className="shrink-0 flex flex-col items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => handleMoveUp(idx)}
+                      disabled={idx === 0}
+                      className={cn(
+                        "inline-flex h-4 w-9 items-center justify-center rounded text-slate-500",
+                        "hover:text-violet-300 hover:bg-slate-800/60 transition-colors",
+                        "disabled:opacity-25 disabled:cursor-not-allowed disabled:hover:text-slate-500 disabled:hover:bg-transparent",
+                      )}
+                      aria-label="씬 위로 이동"
+                      title="위로 이동"
+                    >
+                      <ChevronUp size={12} />
+                    </button>
                     <div
                       className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-800 text-slate-300 font-mono text-sm font-semibold border border-slate-700/70"
                       style={{
@@ -317,8 +401,22 @@ export function AnalysisStep() {
                     >
                       {String(scene.index).padStart(2, "0")}
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => handleMoveDown(idx)}
+                      disabled={idx === scenes.length - 1}
+                      className={cn(
+                        "inline-flex h-4 w-9 items-center justify-center rounded text-slate-500",
+                        "hover:text-violet-300 hover:bg-slate-800/60 transition-colors",
+                        "disabled:opacity-25 disabled:cursor-not-allowed disabled:hover:text-slate-500 disabled:hover:bg-transparent",
+                      )}
+                      aria-label="씬 아래로 이동"
+                      title="아래로 이동"
+                    >
+                      <ChevronDown size={12} />
+                    </button>
                     <div
-                      className="w-1 flex-1 rounded-full"
+                      className="w-1 flex-1 rounded-full mt-1"
                       style={{ background: `${scene.accentColor}40` }}
                     />
                   </div>
@@ -411,11 +509,16 @@ export function AnalysisStep() {
                   </div>
                 </div>
               </Card>
+              </div>
             ))}
           </div>
 
           <div className="mt-6 text-center">
-            <button className="text-xs text-slate-500 hover:text-slate-300 transition-colors inline-flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleAppendScene}
+              className="text-xs text-slate-500 hover:text-violet-300 transition-colors inline-flex items-center gap-2"
+            >
               <Wand2 size={13} />
               씬 수동 추가
             </button>

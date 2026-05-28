@@ -79,6 +79,9 @@ export function RenderStep() {
   const updateScene = useStudio((s) => s.updateScene);
   const resetAll = useStudio((s) => s.resetAll);
   const setStep = useStudio((s) => s.setStep);
+  const uploadedFile = useStudio((s) => s.uploadedFile);
+  const mixOriginalAudio = useStudio((s) => s.mixOriginalAudio);
+  const setMixOriginalAudio = useStudio((s) => s.setMixOriginalAudio);
 
   const [showToast, setShowToast] = useState(false);
   const [renderUrl, setRenderUrl] = useState<string | null>(null);
@@ -144,10 +147,15 @@ export function RenderStep() {
 
       // Phase 2: render — read the LATEST scenes from store after TTS updates.
       setRenderPhase("render");
-      const latestScenes = useStudio.getState().scenes;
+      const latestState = useStudio.getState();
+      const latestScenes = latestState.scenes;
       const res = await fetch("/api/render", {
         method: "POST",
-        body: JSON.stringify({ scenes: latestScenes }),
+        body: JSON.stringify({
+          scenes: latestScenes,
+          mixOriginalAudio: latestState.mixOriginalAudio,
+          sourceVideoUrl: latestState.uploadedFile?.videoUrl,
+        }),
         headers: { "content-type": "application/json" },
       });
       if (!res.ok) {
@@ -418,6 +426,51 @@ export function RenderStep() {
             )}
           </div>
         </div>
+      </Card>
+
+      {/* Mix original audio toggle */}
+      <Card
+        className={cn(
+          "p-4 mb-7 transition-colors",
+          mixOriginalAudio
+            ? "border-violet-500/30 bg-violet-500/[0.04]"
+            : "",
+        )}
+      >
+        <label
+          className={cn(
+            "flex items-start gap-3 select-none",
+            !uploadedFile?.videoUrl || isRendering
+              ? "cursor-not-allowed opacity-60"
+              : "cursor-pointer",
+          )}
+          title={
+            !uploadedFile?.videoUrl
+              ? "원본 비디오가 업로드된 경우에만 사용 가능"
+              : undefined
+          }
+        >
+          <input
+            type="checkbox"
+            checked={mixOriginalAudio}
+            disabled={!uploadedFile?.videoUrl || isRendering}
+            onChange={(e) => setMixOriginalAudio(e.target.checked)}
+            className="mt-0.5 h-4 w-4 rounded border-slate-700 bg-slate-900 accent-violet-500 disabled:cursor-not-allowed"
+          />
+          <div className="min-w-0">
+            <div className="text-sm font-medium text-slate-100">
+              🎵 원본 영상 오디오 믹스 (배경)
+            </div>
+            <div className="text-[12px] text-slate-400 mt-0.5">
+              업로드한 비디오의 원본 사운드를 낮은 볼륨으로 함께 깔아 재생합니다.
+            </div>
+            {!uploadedFile?.videoUrl && (
+              <div className="text-[11px] text-amber-300/80 mt-1 font-mono">
+                원본 비디오가 업로드된 경우에만 사용 가능
+              </div>
+            )}
+          </div>
+        </label>
       </Card>
 
       {/* Per-scene queue */}

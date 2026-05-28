@@ -75,8 +75,112 @@ async function fileExists(p: string): Promise<boolean> {
 }
 
 /**
+ * Resolves an /uploads/<id>/source.<ext> URL to an on-disk file in public/.
+ * Returns null if the input is not a usable uploads url or the file is missing.
+ */
+async function resolveSourceVideoPath(
+  sourceVideoUrl: string | undefined,
+): Promise<string | null> {
+  if (typeof sourceVideoUrl !== "string" || sourceVideoUrl.length === 0) {
+    return null;
+  }
+  if (!sourceVideoUrl.startsWith("/uploads/")) return null;
+  const rel = sourceVideoUrl.replace(/^\/+/, "");
+  const local = path.join(process.cwd(), "public", rel);
+  if (!(await fileExists(local))) return null;
+  return local;
+}
+
+/**
+ * Extracts the audio track from the original uploaded source video into an
+ * mp3 file. Returns the output path on success, null on any failure.
+ */
+async function extractSourceAudio(opts: {
+  sourceVideoPath: string;
+  outPath: string;
+}): Promise<string | null> {
+  const { sourceVideoPath, outPath } = opts;
+  try {
+    const res = await runFfmpeg([
+      "-y",
+      "-i",
+      sourceVideoPath,
+      "-vn",
+      "-ac",
+      "2",
+      "-ar",
+      "44100",
+      "-c:a",
+      "libmp3lame",
+      "-b:a",
+      "192k",
+      outPath,
+    ]);
+    if (res.code !== 0) {
+      console.error(
+        `[render] ffmpeg source-audio extract failed exit=${res.code}. stderr tail:\n${res.stderr.slice(-800)}`,
+      );
+      return null;
+    }
+    if (!(await fileExists(outPath))) return null;
+    return outPath;
+  } catch (e) {
+    console.error("[render] source-audio extract threw:", e);
+    return null;
+  }
+}
+
+/**
+ * Mixes a foreground combined mp3 (TTS/STT) with a background mp3 (original
+ * video audio) at low volume. Returns the output path on success, null on any
+ * failure (caller should fall back to the foreground-only mp3).
+ */
+async function mixBackgroundAudio(opts: {
+  foregroundPath: string;
+  backgroundPath: string;
+  outPath: string;
+  backgroundVolume: number;
+}): Promise<string | null> {
+  const { foregroundPath, backgroundPath, outPath, backgroundVolume } = opts;
+  try {
+    const res = await runFfmpeg([
+      "-y",
+      "-i",
+      foregroundPath,
+      "-i",
+      backgroundPath,
+      "-filter_complex",
+      `[1:a]volume=${backgroundVolume}[bg];[0:a][bg]amix=inputs=2:duration=longest:dropout_transition=0[a]`,
+      "-map",
+      "[a]",
+      "-c:a",
+      "libmp3lame",
+      "-b:a",
+      "192k",
+      outPath,
+    ]);
+    if (res.code !== 0) {
+      console.error(
+        `[render] ffmpeg amix failed exit=${res.code}. stderr tail:\n${res.stderr.slice(-800)}`,
+      );
+      return null;
+    }
+    if (!(await fileExists(outPath))) return null;
+    return outPath;
+  } catch (e) {
+    console.error("[render] amix threw:", e);
+    return null;
+  }
+}
+
+/**
  * Concatenates per-scene mp3 audio files into a single mp3 and muxes it into
  * the silent mp4. Replaces the silent mp4 in place with the muxed result.
+ *
+ * If `mixOriginalAudio` is true and `sourceVideoPath` resolves to a usable
+ * file, the original video's audio track is extracted and mixed under the
+ * TTS/STT track at 0.25 volume. On any failure during the extra mixing step,
+ * gracefully falls back to TTS-only audio.
  *
  * If anything fails, logs and leaves the original silent mp4 untouched
  * (graceful degradation).
@@ -85,13 +189,25 @@ async function mixAudioIntoVideo(opts: {
   videoPath: string;
   audioPaths: string[];
   jobId: string;
+  mixOriginalAudio?: boolean;
+  sourceVideoPath?: string | null;
 }): Promise<void> {
-  const { videoPath, audioPaths, jobId } = opts;
+  const {
+    videoPath,
+    audioPaths,
+    jobId,
+    mixOriginalAudio,
+    sourceVideoPath,
+  } = opts;
   if (audioPaths.length === 0) return;
 
   const renderDir = path.dirname(videoPath);
   const tmpCombined = path.join(renderDir, `${jobId}.audio.mp3`);
+  const tmpSourceAudio = path.join(renderDir, `${jobId}.source-audio.mp3`);
+  const tmpMixed = path.join(renderDir, `${jobId}.audio-mixed.mp3`);
   const tmpMuxed = path.join(renderDir, `${jobId}.muxed.mp4`);
+
+  let finalAudioPath: string = tmpCombined;
 
   try {
     // 1) Concat all per-scene audio into a single mp3 using filter_complex.
@@ -134,13 +250,40 @@ async function mixAudioIntoVideo(opts: {
       return;
     }
 
+    // 1b) Optional: extract original audio and amix at low volume.
+    if (mixOriginalAudio && sourceVideoPath) {
+      const extracted = await extractSourceAudio({
+        sourceVideoPath,
+        outPath: tmpSourceAudio,
+      });
+      if (extracted) {
+        const mixed = await mixBackgroundAudio({
+          foregroundPath: tmpCombined,
+          backgroundPath: extracted,
+          outPath: tmpMixed,
+          backgroundVolume: 0.25,
+        });
+        if (mixed) {
+          finalAudioPath = tmpMixed;
+        } else {
+          console.warn(
+            "[render] background mix failed — falling back to combined.mp3 only.",
+          );
+        }
+      } else {
+        console.warn(
+          "[render] source-audio extraction failed — falling back to combined.mp3 only.",
+        );
+      }
+    }
+
     // 2) Mux: video stream copy + AAC audio re-encode.
     const muxRes = await runFfmpeg([
       "-y",
       "-i",
       videoPath,
       "-i",
-      tmpCombined,
+      finalAudioPath,
       "-c:v",
       "copy",
       "-c:a",
@@ -167,14 +310,21 @@ async function mixAudioIntoVideo(opts: {
   } catch (e) {
     console.error("[render] audio mix step failed:", e);
   } finally {
-    // Cleanup combined audio (mp4 already moved or left in place).
+    // Cleanup intermediate audio + leftover mp4 (mp4 already moved or left in place).
     await unlink(tmpCombined).catch(() => undefined);
+    await unlink(tmpSourceAudio).catch(() => undefined);
+    await unlink(tmpMixed).catch(() => undefined);
     await unlink(tmpMuxed).catch(() => undefined);
   }
 }
 
 export async function POST(req: Request) {
-  let body: { scenes?: unknown; jobId?: unknown };
+  let body: {
+    scenes?: unknown;
+    jobId?: unknown;
+    mixOriginalAudio?: unknown;
+    sourceVideoUrl?: unknown;
+  };
   try {
     body = await req.json();
   } catch {
@@ -191,6 +341,9 @@ export async function POST(req: Request) {
     typeof body.jobId === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(body.jobId)
       ? body.jobId
       : crypto.randomUUID();
+  const mixOriginalAudio = body.mixOriginalAudio === true;
+  const sourceVideoUrl =
+    typeof body.sourceVideoUrl === "string" ? body.sourceVideoUrl : undefined;
 
   const outDir = path.join(process.cwd(), "public", "renders");
   await mkdir(outDir, { recursive: true });
@@ -252,10 +405,22 @@ export async function POST(req: Request) {
     }
 
     if (allHaveAudio && audioPaths.length === sceneInputs.length) {
+      // Resolve source video path for optional background-audio mix.
+      const sourceVideoPath = mixOriginalAudio
+        ? await resolveSourceVideoPath(sourceVideoUrl)
+        : null;
+      if (mixOriginalAudio && !sourceVideoPath) {
+        console.warn(
+          `[render] mixOriginalAudio requested but sourceVideoUrl='${sourceVideoUrl ?? ""}' did not resolve to a usable file — proceeding without background mix.`,
+        );
+      }
+
       await mixAudioIntoVideo({
         videoPath: outPath,
         audioPaths,
         jobId,
+        mixOriginalAudio,
+        sourceVideoPath,
       });
     } else {
       console.warn(
