@@ -127,7 +127,14 @@ export function AnalysisStep() {
       const res = await fetch("/api/transcribe", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ videoId: uploadedFile.id }),
+        body: JSON.stringify({
+          videoId: uploadedFile.id,
+          scenes: scenes.map((s) => ({
+            id: s.id,
+            index: s.index,
+            narration: s.narration,
+          })),
+        }),
       });
 
       if (!res.ok) {
@@ -146,10 +153,26 @@ export function AnalysisStep() {
         language?: string;
         durationSeconds?: number;
         segmentCount: number;
+        sceneAlignment?: {
+          sceneId: string;
+          startSeconds: number;
+          endSeconds: number;
+          durationFrames: number;
+          audioUrl: string;
+        }[];
       };
 
       setTranscript(data.transcript);
       setSttLanguage(data.language ?? null);
+
+      if (Array.isArray(data.sceneAlignment)) {
+        for (const a of data.sceneAlignment) {
+          updateScene(a.sceneId, {
+            audioUrl: a.audioUrl,
+            durationFrames: a.durationFrames,
+          });
+        }
+      }
     } catch (e) {
       setSttError(
         `STT 실패: ${e instanceof Error ? e.message : String(e)}`,

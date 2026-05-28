@@ -25,6 +25,7 @@
 *.pem
 /public/uploads/
 /public/uploads/tts/
+/public/uploads/stt-clips/
 /public/renders/
 
 # debug

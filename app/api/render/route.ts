@@ -233,7 +233,11 @@ export async function POST(req: Request) {
     let allHaveAudio = sceneInputs.length > 0;
     for (const s of sceneInputs) {
       const url = s.audioUrl;
-      if (typeof url !== "string" || !url.startsWith("/uploads/tts/")) {
+      if (
+        typeof url !== "string" ||
+        (!url.startsWith("/uploads/tts/") &&
+          !url.startsWith("/uploads/stt-clips/"))
+      ) {
         allHaveAudio = false;
         break;
       }

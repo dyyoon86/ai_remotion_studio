@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { spawn } from "node:child_process";
-import { readdir } from "node:fs/promises";
+import { mkdir, readdir } from "node:fs/promises";
 import path from "node:path";
 import { FFMPEG_PATH } from "@/lib/ffmpeg";
 import { PYTHON_PATH } from "@/lib/python";
@@ -26,7 +26,24 @@ type WhisperResult = {
   segments?: WhisperSegment[];
 };
 
+type SceneRequestEntry = {
+  id: string;
+  index: number;
+  narration: string;
+};
+
+type SceneAlignment = {
+  sceneId: string;
+  startSeconds: number;
+  endSeconds: number;
+  durationFrames: number;
+  audioUrl: string;
+};
+
 const TRANSCRIBE_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+const CLIP_TIMEOUT_MS = 60 * 1000; // 1 minute total budget for clip extraction
+const FPS = 30;
+const MIN_FRAMES_PER_SCENE = 15;
 
 function isEnoent(err: unknown): boolean {
   if (typeof err !== "object" || err === null) return false;
@@ -109,6 +126,93 @@ async function findSourceFile(dir: string): Promise<string | null> {
   return match ? path.join(dir, match) : null;
 }
 
+function parseScenesFromBody(body: unknown): SceneRequestEntry[] | undefined {
+  if (typeof body !== "object" || body === null) return undefined;
+  const raw = (body as { scenes?: unknown }).scenes;
+  if (!Array.isArray(raw)) return undefined;
+  const out: SceneRequestEntry[] = [];
+  for (const item of raw) {
+    if (typeof item !== "object" || item === null) continue;
+    const obj = item as { id?: unknown; index?: unknown; narration?: unknown };
+    if (typeof obj.id !== "string" || obj.id.trim() === "") continue;
+    // Defensive: scene IDs must be path-safe (we use them as filenames).
+    if (obj.id.includes("/") || obj.id.includes("\\") || obj.id.includes("..")) {
+      continue;
+    }
+    const idx = typeof obj.index === "number" ? obj.index : 0;
+    const narration = typeof obj.narration === "string" ? obj.narration : "";
+    out.push({ id: obj.id, index: idx, narration });
+  }
+  return out.length > 0 ? out : undefined;
+}
+
+/**
+ * Distribute STT segments across scenes proportionally by COUNT. Returns the
+ * (startSeconds, endSeconds) for each scene in order. If a scene's bucket is
+ * empty (fewer STT segments than scenes), fall back to dividing total duration
+ * equally across scenes.
+ */
+function bucketSegments(
+  segments: WhisperSegment[],
+  sceneCount: number,
+  totalDuration: number,
+): { startSeconds: number; endSeconds: number }[] {
+  const result: { startSeconds: number; endSeconds: number }[] = [];
+
+  if (sceneCount <= 0) return result;
+
+  const buckets: WhisperSegment[][] = Array.from(
+    { length: sceneCount },
+    () => [],
+  );
+
+  if (segments.length > 0) {
+    for (let i = 0; i < segments.length; i++) {
+      const bucketIdx = Math.min(
+        sceneCount - 1,
+        Math.floor((i / segments.length) * sceneCount),
+      );
+      buckets[bucketIdx].push(segments[i]);
+    }
+  }
+
+  // Determine the total span we can fall back on. Prefer the whisper duration
+  // when available; otherwise approximate from the last segment's end.
+  const fallbackTotal =
+    totalDuration > 0
+      ? totalDuration
+      : segments.length > 0
+        ? segments[segments.length - 1].end
+        : 0;
+  const equalSlice = sceneCount > 0 ? fallbackTotal / sceneCount : 0;
+
+  for (let i = 0; i < sceneCount; i++) {
+    const bucket = buckets[i];
+    if (bucket.length > 0) {
+      let minStart = Infinity;
+      let maxEnd = -Infinity;
+      for (const seg of bucket) {
+        if (seg.start < minStart) minStart = seg.start;
+        if (seg.end > maxEnd) maxEnd = seg.end;
+      }
+      if (
+        Number.isFinite(minStart) &&
+        Number.isFinite(maxEnd) &&
+        maxEnd > minStart
+      ) {
+        result.push({ startSeconds: minStart, endSeconds: maxEnd });
+        continue;
+      }
+    }
+    // Fallback: equal slice of fallbackTotal.
+    const startSeconds = equalSlice * i;
+    const endSeconds = equalSlice * (i + 1);
+    result.push({ startSeconds, endSeconds });
+  }
+
+  return result;
+}
+
 export async function POST(req: Request): Promise<Response> {
   // 1) Parse + validate body
   let body: unknown;
@@ -138,6 +242,8 @@ export async function POST(req: Request): Promise<Response> {
       { status: 400 },
     );
   }
+
+  const requestedScenes = parseScenesFromBody(body);
 
   // 2) Locate source file
   const uploadDir = path.join(process.cwd(), "public", "uploads", videoId);
@@ -269,11 +375,120 @@ export async function POST(req: Request): Promise<Response> {
     sceneId: undefined,
   }));
 
+  // 7) Optional scene alignment + per-scene audio clip extraction.
+  let sceneAlignment: SceneAlignment[] | undefined;
+  if (requestedScenes && requestedScenes.length > 0) {
+    const totalDuration =
+      typeof parsed.duration === "number" && parsed.duration > 0
+        ? parsed.duration
+        : rawSegments.length > 0
+          ? rawSegments[rawSegments.length - 1].end
+          : 0;
+
+    const buckets = bucketSegments(
+      rawSegments,
+      requestedScenes.length,
+      totalDuration,
+    );
+
+    const clipsDir = path.join(
+      process.cwd(),
+      "public",
+      "uploads",
+      "stt-clips",
+      videoId,
+    );
+    try {
+      await mkdir(clipsDir, { recursive: true });
+    } catch (e) {
+      console.error("[transcribe] mkdir stt-clips failed:", e);
+    }
+
+    const alignments: SceneAlignment[] = [];
+    const startedAt = Date.now();
+
+    for (let i = 0; i < requestedScenes.length; i++) {
+      const scene = requestedScenes[i];
+      const bucket = buckets[i] ?? { startSeconds: 0, endSeconds: 0 };
+      const startSeconds = Math.max(0, bucket.startSeconds);
+      let endSeconds = Math.max(startSeconds, bucket.endSeconds);
+      // Guard against zero-length spans.
+      if (endSeconds <= startSeconds) {
+        endSeconds = startSeconds + MIN_FRAMES_PER_SCENE / FPS;
+      }
+
+      const durationFrames = Math.max(
+        MIN_FRAMES_PER_SCENE,
+        Math.ceil((endSeconds - startSeconds) * FPS),
+      );
+
+      const clipFileName = `${scene.id}.mp3`;
+      const clipLocalPath = path.join(clipsDir, clipFileName);
+      const audioUrl = `/uploads/stt-clips/${videoId}/${clipFileName}`;
+
+      // Respect overall 1-minute budget for clip extraction.
+      const elapsed = Date.now() - startedAt;
+      const remaining = CLIP_TIMEOUT_MS - elapsed;
+      if (remaining <= 0) {
+        console.warn(
+          `[transcribe] clip extraction budget exhausted at scene ${scene.id}; skipping remaining clips.`,
+        );
+        break;
+      }
+
+      try {
+        const clipRes = await runChild(
+          FFMPEG_PATH,
+          [
+            "-y",
+            "-ss",
+            startSeconds.toFixed(3),
+            "-to",
+            endSeconds.toFixed(3),
+            "-i",
+            audioPath,
+            "-c:a",
+            "libmp3lame",
+            "-b:a",
+            "128k",
+            clipLocalPath,
+          ],
+          { timeoutMs: Math.min(remaining, 30 * 1000) },
+        );
+        if (clipRes.code !== 0) {
+          console.error(
+            `[transcribe] clip ffmpeg exit=${clipRes.code} for scene ${scene.id}. stderr tail:\n${tail(clipRes.stderr, 400)}`,
+          );
+          continue;
+        }
+      } catch (e) {
+        console.error(
+          `[transcribe] clip extraction failed for scene ${scene.id}:`,
+          e,
+        );
+        continue;
+      }
+
+      alignments.push({
+        sceneId: scene.id,
+        startSeconds,
+        endSeconds,
+        durationFrames,
+        audioUrl,
+      });
+    }
+
+    if (alignments.length > 0) {
+      sceneAlignment = alignments;
+    }
+  }
+
   return NextResponse.json({
     transcript,
     language: parsed.language ?? undefined,
     durationSeconds:
       typeof parsed.duration === "number" ? parsed.duration : undefined,
     segmentCount: transcript.length,
+    ...(sceneAlignment ? { sceneAlignment } : {}),
   });
 }
