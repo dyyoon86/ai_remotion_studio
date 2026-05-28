@@ -2,6 +2,16 @@
 
 import { create } from "zustand";
 import { INITIAL_SCENES, INITIAL_TRANSCRIPT } from "./mock-data";
+import {
+  loadProjectsFromStorage,
+  saveProjectsToStorage,
+  loadActiveIdFromStorage,
+  saveActiveIdToStorage,
+  newProjectId,
+  defaultName,
+  type Project,
+  type ProjectSnapshot,
+} from "./projects";
 
 export type ScenesSource = "mock" | "segmented" | "manual";
 
@@ -155,6 +165,10 @@ type StudioState = {
   renderComplete: boolean;
   analyzingScript: boolean;
 
+  // Project state (Phase 5)
+  projects: Project[];
+  activeProjectId: string | null;
+
   setStep: (step: number) => void;
   goNext: () => void;
   goPrev: () => void;
@@ -171,6 +185,14 @@ type StudioState = {
   setRenderComplete: (v: boolean) => void;
   setAnalyzingScript: (v: boolean) => void;
   resetAll: () => void;
+
+  // Project actions (Phase 5)
+  loadProjects: () => void;
+  newProject: (name?: string) => string;
+  switchProject: (id: string) => void;
+  saveCurrentProject: () => void;
+  deleteProject: (id: string) => void;
+  renameProject: (id: string, name: string) => void;
 };
 
 const initial = {
@@ -188,8 +210,58 @@ const initial = {
   analyzingScript: false,
 };
 
+function buildDefaultSnapshot(): ProjectSnapshot {
+  return {
+    uploadedFile: null,
+    script: "",
+    scenes: INITIAL_SCENES.map((s) => ({ ...s })),
+    transcript: INITIAL_TRANSCRIPT.map((t) => ({ ...t })),
+    scenesSource: "mock",
+    transcriptSource: "mock",
+    currentStep: 0,
+  };
+}
+
+function buildEmptySnapshot(): ProjectSnapshot {
+  return {
+    uploadedFile: null,
+    script: "",
+    scenes: [],
+    transcript: [],
+    scenesSource: "manual",
+    transcriptSource: "derived",
+    currentStep: 0,
+  };
+}
+
+function snapshotFromState(s: StudioState): ProjectSnapshot {
+  return {
+    uploadedFile: s.uploadedFile,
+    script: s.script,
+    scenes: s.scenes,
+    transcript: s.transcript,
+    scenesSource: s.scenesSource,
+    transcriptSource: s.transcriptSource,
+    currentStep: s.currentStep,
+  };
+}
+
+function stateFromSnapshot(snap: ProjectSnapshot): Partial<StudioState> {
+  return {
+    uploadedFile: snap.uploadedFile,
+    script: snap.script,
+    scenes: snap.scenes,
+    transcript: snap.transcript,
+    scenesSource: snap.scenesSource,
+    transcriptSource: snap.transcriptSource,
+    currentStep: snap.currentStep,
+  };
+}
+
 export const useStudio = create<StudioState>((set, get) => ({
   ...initial,
+  projects: [] as Project[],
+  activeProjectId: null as string | null,
 
   setStep: (step) =>
     set({ currentStep: Math.max(0, Math.min(STEPS.length - 1, step)) }),
@@ -238,6 +310,183 @@ export const useStudio = create<StudioState>((set, get) => ({
       transcript: INITIAL_TRANSCRIPT.map((t) => ({ ...t })),
       renderProgress: {},
     });
+  },
+
+  // ----- Project actions (Phase 5) -----
+
+  loadProjects: () => {
+    if (typeof window === "undefined") return;
+    const loaded = loadProjectsFromStorage();
+
+    if (loaded.length === 0) {
+      // First-time visitor: create implicit default project with mock data
+      const id = newProjectId();
+      const now = Date.now();
+      const defaultProj: Project = {
+        id,
+        name: "프로젝트 1",
+        createdAt: now,
+        updatedAt: now,
+        snapshot: buildDefaultSnapshot(),
+      };
+      const list = [defaultProj];
+      saveProjectsToStorage(list);
+      saveActiveIdToStorage(id);
+      set({
+        projects: list,
+        activeProjectId: id,
+        ...stateFromSnapshot(defaultProj.snapshot),
+      });
+      return;
+    }
+
+    // Determine active: persisted id if valid, otherwise first
+    const persistedActive = loadActiveIdFromStorage();
+    const active =
+      (persistedActive && loaded.find((p) => p.id === persistedActive)) ||
+      loaded[0];
+    saveActiveIdToStorage(active.id);
+
+    set({
+      projects: loaded,
+      activeProjectId: active.id,
+      ...stateFromSnapshot(active.snapshot),
+    });
+  },
+
+  newProject: (name) => {
+    const id = newProjectId();
+    const now = Date.now();
+    const existing = get().projects;
+    const proj: Project = {
+      id,
+      name: name && name.trim().length > 0 ? name.trim() : defaultName(existing),
+      createdAt: now,
+      updatedAt: now,
+      snapshot: buildEmptySnapshot(),
+    };
+    const nextList = [...existing, proj];
+    saveProjectsToStorage(nextList);
+    saveActiveIdToStorage(id);
+    set({
+      projects: nextList,
+      activeProjectId: id,
+      ...stateFromSnapshot(proj.snapshot),
+      // Always reset transient state when switching
+      renderProgress: {},
+      isRendering: false,
+      renderComplete: false,
+      transcribing: false,
+      analyzingScript: false,
+    });
+    return id;
+  },
+
+  switchProject: (id) => {
+    const { projects, activeProjectId } = get();
+    if (id === activeProjectId) return;
+    const target = projects.find((p) => p.id === id);
+    if (!target) return;
+
+    // Snapshot the currently-active project first so unsaved edits aren't lost.
+    if (activeProjectId) {
+      const currentSnap = snapshotFromState(get());
+      const updatedProjects = projects.map((p) =>
+        p.id === activeProjectId
+          ? { ...p, snapshot: currentSnap, updatedAt: Date.now() }
+          : p
+      );
+      saveProjectsToStorage(updatedProjects);
+      // Reload target from updated list so we pick up any normalized refs
+      const finalTarget = updatedProjects.find((p) => p.id === id) ?? target;
+      saveActiveIdToStorage(id);
+      set({
+        projects: updatedProjects,
+        activeProjectId: id,
+        ...stateFromSnapshot(finalTarget.snapshot),
+        renderProgress: {},
+        isRendering: false,
+        renderComplete: false,
+        transcribing: false,
+        analyzingScript: false,
+      });
+      return;
+    }
+
+    saveActiveIdToStorage(id);
+    set({
+      activeProjectId: id,
+      ...stateFromSnapshot(target.snapshot),
+      renderProgress: {},
+      isRendering: false,
+      renderComplete: false,
+      transcribing: false,
+      analyzingScript: false,
+    });
+  },
+
+  saveCurrentProject: () => {
+    const state = get();
+    const { activeProjectId, projects } = state;
+    if (!activeProjectId) return;
+    const snap = snapshotFromState(state);
+    const now = Date.now();
+    const next = projects.map((p) =>
+      p.id === activeProjectId ? { ...p, snapshot: snap, updatedAt: now } : p
+    );
+    saveProjectsToStorage(next);
+    set({ projects: next });
+  },
+
+  deleteProject: (id) => {
+    const { projects, activeProjectId } = get();
+    const next = projects.filter((p) => p.id !== id);
+    saveProjectsToStorage(next);
+
+    if (id !== activeProjectId) {
+      set({ projects: next });
+      return;
+    }
+
+    // Deleted was active — switch to first remaining, or null
+    if (next.length === 0) {
+      saveActiveIdToStorage(null);
+      set({
+        projects: next,
+        activeProjectId: null,
+        ...stateFromSnapshot(buildEmptySnapshot()),
+        renderProgress: {},
+        isRendering: false,
+        renderComplete: false,
+        transcribing: false,
+        analyzingScript: false,
+      });
+      return;
+    }
+
+    const fallback = next[0];
+    saveActiveIdToStorage(fallback.id);
+    set({
+      projects: next,
+      activeProjectId: fallback.id,
+      ...stateFromSnapshot(fallback.snapshot),
+      renderProgress: {},
+      isRendering: false,
+      renderComplete: false,
+      transcribing: false,
+      analyzingScript: false,
+    });
+  },
+
+  renameProject: (id, name) => {
+    const trimmed = name.trim();
+    if (trimmed.length === 0) return;
+    const { projects } = get();
+    const next = projects.map((p) =>
+      p.id === id ? { ...p, name: trimmed, updatedAt: Date.now() } : p
+    );
+    saveProjectsToStorage(next);
+    set({ projects: next });
   },
 }));
 
